@@ -1,25 +1,7 @@
-// Знаки из точек, сетка 5×7, как на точечном дисплее.
-const G: Record<string, string> = {
-  "0": "01110 10001 10011 10101 11001 10001 01110",
-  "1": "00100 01100 00100 00100 00100 00100 01110",
-  "2": "01110 10001 00001 00010 00100 01000 11111",
-  "3": "11110 00001 00001 01110 00001 00001 11110",
-  "4": "00010 00110 01010 10010 11111 00010 00010",
-  "5": "11111 10000 11110 00001 00001 10001 01110",
-  "6": "00110 01000 10000 11110 10001 10001 01110",
-  "7": "11111 00001 00010 00100 01000 01000 01000",
-  "8": "01110 10001 10001 01110 10001 10001 01110",
-  "9": "01110 10001 10001 01111 00001 00010 01100",
-  S: "01111 10000 10000 01110 00001 00001 11110",
-  M: "10001 11011 10101 10101 10001 10001 10001",
-  L: "10000 10000 10000 10000 10000 10000 11111",
-  X: "10001 10001 01010 00100 01010 10001 10001",
-  O: "01110 10001 10001 10001 10001 10001 01110",
-  N: "10001 11001 10101 10011 10001 10001 10001",
-  E: "11111 10000 10000 11110 10000 10000 11111",
-  F: "11111 10000 10000 11110 10000 10000 10000",
-  " ": "00 00 00 00 00 00 00",
-};
+import { DOT_FONT, DOT_ROWS } from "@/lib/dotfont";
+
+// Знаки из точек. Форма букв берётся из округлого шрифта (см. scripts/make-dotfont.py),
+// а размер каждой точки — из того, сколько буквы попало в клетку, поэтому края мягкие.
 
 /** gather: точки слетаются на свои места со всех сторон (для интро). */
 export default function Dots({
@@ -33,15 +15,21 @@ export default function Dots({
   grid?: boolean;
   gather?: boolean;
 }) {
-  const dots: { x: number; y: number; on: boolean }[] = [];
+  const dots: { x: number; y: number; r: number; on: boolean }[] = [];
   let col = 0;
   for (const ch of text) {
-    const rows = (G[ch] ?? G[" "]).split(" ");
+    const rows = DOT_FONT[ch];
+    if (!rows) {
+      col += 3; // пробел
+      continue;
+    }
     const w = rows[0].length;
     rows.forEach((row, y) => {
       for (let x = 0; x < w; x++) {
-        const on = row[x] === "1";
-        if (on || grid) dots.push({ x: col + x, y, on });
+        const level = Number(row[x]);
+        if (level > 0)
+          dots.push({ x: col + x, y, r: 0.12 + 0.3 * (level / 9), on: true });
+        else if (grid) dots.push({ x: col + x, y, r: 0.2, on: false });
       }
     });
     col += w + 1;
@@ -50,9 +38,9 @@ export default function Dots({
   return (
     <svg
       className={"dots" + (gather ? " gather" : "")}
-      viewBox={`-0.5 -0.5 ${width} 7`}
+      viewBox={`-0.5 -0.5 ${width} ${DOT_ROWS}`}
       height={height}
-      width={(height / 7) * width}
+      width={(height / DOT_ROWS) * width}
       aria-hidden="true"
     >
       {dots.map((d, i) => (
@@ -60,7 +48,7 @@ export default function Dots({
           key={i}
           cx={d.x}
           cy={d.y}
-          r={0.39}
+          r={d.r}
           className={d.on ? "on" : "off"}
           style={
             gather

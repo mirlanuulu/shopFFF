@@ -66,14 +66,9 @@ export default function Shop() {
     import("@/lib/engine")
       .then(({ Engine }) => {
         if (dead || !canvasRef.current) return;
-        // интро показываем один раз; ?intro в адресе включает его снова
-        let play = new URLSearchParams(location.search).has("intro");
-        try {
-          play ||= !localStorage.getItem("fff-intro");
-          localStorage.setItem("fff-intro", "1");
-        } catch {}
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-          play = false;
+        // интро играет при каждом открытии сайта, кроме случая, когда в системе отключены анимации
+        const play = !window.matchMedia("(prefers-reduced-motion: reduce)")
+          .matches;
         setIntro(play ? "play" : "off");
         const options = {
           onIntro: (phase: "clear" | "done") => {
@@ -316,7 +311,7 @@ export default function Shop() {
             <strong aria-label={formatPrice(product.price)}>
               <Dots
                 text={formatPrice(product.price).replace(" сом", "")}
-                height={22}
+                height={19}
               />
               <small>сом</small>
             </strong>

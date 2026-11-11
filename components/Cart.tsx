@@ -4,7 +4,12 @@ import { useRef, useState } from "react";
 import Dots from "./Dots";
 import { formatPrice, type Product } from "@/lib/products";
 
-export type CartLine = { key: string; product: Product; size: string; qty: number };
+export type CartLine = {
+  key: string;
+  product: Product;
+  size: string;
+  qty: number;
+};
 
 type Props = {
   lines: CartLine[];
@@ -18,7 +23,15 @@ type Drag = { x: number; y: number; axis: "" | "x" | "y" };
 const digits = (n: number) => formatPrice(n).replace(" сом", "");
 
 /** Строка корзины: смахните влево, чтобы убрать. */
-function Line({ line, onQty, onRemove }: { line: CartLine; onQty: Props["onQty"]; onRemove: Props["onRemove"] }) {
+function Line({
+  line,
+  onQty,
+  onRemove,
+}: {
+  line: CartLine;
+  onQty: Props["onQty"];
+  onRemove: Props["onRemove"];
+}) {
   const drag = useRef<Drag | null>(null);
   const [dx, setDx] = useState(0);
   const [gone, setGone] = useState(false);
@@ -35,16 +48,22 @@ function Line({ line, onQty, onRemove }: { line: CartLine; onQty: Props["onQty"]
   return (
     <li
       className={gone ? "gone" : ""}
-      style={{ transform: `translateX(${gone ? -110 : 0}%) translateX(${gone ? 0 : dx}px)`, opacity: 1 + dx / 260, transition: live ? "none" : undefined }}
+      style={{
+        transform: `translateX(${gone ? -110 : 0}%) translateX(${gone ? 0 : dx}px)`,
+        opacity: 1 + dx / 260,
+        transition: live ? "none" : undefined,
+      }}
       onPointerDown={(e) => {
-        if (!(e.target as HTMLElement).closest("button")) drag.current = { x: e.clientX, y: e.clientY, axis: "" };
+        if (!(e.target as HTMLElement).closest("button"))
+          drag.current = { x: e.clientX, y: e.clientY, axis: "" };
       }}
       onPointerMove={(e) => {
         const d = drag.current;
         if (!d) return;
         const mx = e.clientX - d.x;
         const my = e.clientY - d.y;
-        if (!d.axis && Math.abs(mx) + Math.abs(my) > 10) d.axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+        if (!d.axis && Math.abs(mx) + Math.abs(my) > 10)
+          d.axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
         if (d.axis === "x") {
           setLive(true);
           setDx(Math.min(0, mx));
@@ -58,19 +77,26 @@ function Line({ line, onQty, onRemove }: { line: CartLine; onQty: Props["onQty"]
       <div>
         <b>{line.product.name}</b>
         <span>
-          <Dots text={line.size === "Один размер" ? "ONE" : line.size} height={10} />
+          <em>{line.size}</em>
           {formatPrice(line.product.price)}
         </span>
       </div>
       <div className="qty">
-        <button onClick={() => onQty(line.key, -1)} aria-label={line.qty === 1 ? `Убрать ${line.product.name}` : "Меньше"}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>
+        <button
+          onClick={() => onQty(line.key, -1)}
+          aria-label={line.qty === 1 ? `Убрать ${line.product.name}` : "Меньше"}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 12h12" />
+          </svg>
         </button>
         <span key={line.qty} aria-label={`${line.qty} шт.`}>
-          <Dots text={String(line.qty)} height={14} />
+          <Dots text={String(line.qty)} height={16} />
         </span>
         <button onClick={() => onQty(line.key, 1)} aria-label="Больше">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 12h12M12 6v12" />
+          </svg>
         </button>
       </div>
     </li>
@@ -102,7 +128,10 @@ export default function Cart({ lines, onQty, onRemove, onClose }: Props) {
       <aside
         className="cart"
         aria-label="Корзина"
-        style={{ transform: closing ? undefined : `translateY(${dy}px)`, transition: live ? "none" : undefined }}
+        style={{
+          transform: closing ? undefined : `translateY(${dy}px)`,
+          transition: live ? "none" : undefined,
+        }}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => {
           const t = e.target as HTMLElement;
@@ -115,7 +144,8 @@ export default function Cart({ lines, onQty, onRemove, onClose }: Props) {
           if (!d) return;
           const mx = e.clientX - d.x;
           const my = e.clientY - d.y;
-          if (!d.axis && Math.abs(mx) + Math.abs(my) > 10) d.axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+          if (!d.axis && Math.abs(mx) + Math.abs(my) > 10)
+            d.axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
           if (d.axis === "y") {
             setLive(true);
             setDy(Math.max(0, my));
@@ -137,7 +167,10 @@ export default function Cart({ lines, onQty, onRemove, onClose }: Props) {
         </div>
 
         {lines.length === 0 ? (
-          <p className="empty">Пока пусто. Смахните корзину вниз, выберите вещь на витрине и добавьте её сюда.</p>
+          <p className="empty">
+            Пока пусто. Смахните корзину вниз, выберите вещь на витрине и
+            добавьте её сюда.
+          </p>
         ) : (
           <>
             <ul style={{ touchAction: lines.length > 3 ? "pan-y" : "none" }}>
