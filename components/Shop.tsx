@@ -15,7 +15,13 @@ export default function Shop() {
   const [sizes, setSizes] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
-  const [toast, setToast] = useState("");
+  const [added, setAdded] = useState(false);
+  const [fly, setFly] = useState<{ key: number; src: string; dx: number; dy: number } | null>(null);
+  const cartRef = useRef<HTMLButtonElement>(null);
+  const cartOpenRef = useRef(false);
+  useEffect(() => {
+    cartOpenRef.current = cartOpen;
+  }, [cartOpen]);
   const [nudge, setNudge] = useState(false);
   const [touched, setTouched] = useState(false);
   const [webgl, setWebgl] = useState(true);
@@ -51,19 +57,13 @@ export default function Shop() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") engineRef.current?.step(1);
-      if (e.key === "ArrowLeft") engineRef.current?.step(-1);
+      if (e.key === "ArrowRight" && !cartOpenRef.current) engineRef.current?.step(1);
+      if (e.key === "ArrowLeft" && !cartOpenRef.current) engineRef.current?.step(-1);
       if (e.key === "Escape") setCartOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 1800);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const chooseCategory = useCallback((id: CategoryId) => {
     setCat(id);
@@ -81,7 +81,16 @@ export default function Shop() {
       const hit = c.find((l) => l.key === key);
       return hit ? c.map((l) => (l === hit ? { ...l, qty: l.qty + 1 } : l)) : [...c, { key, product, size, qty: 1 }];
     });
-    setToast("Добавлено в корзину");
+    // the thing itself flies into the cart, so it is obvious where it went
+    const r = cartRef.current?.getBoundingClientRect();
+    if (r) {
+      const x = window.innerWidth / 2;
+      const y = window.innerHeight * 0.32;
+      setFly({ key: Date.now(), src: product.image, dx: r.left + r.width / 2 - x, dy: r.top + r.height / 2 - y });
+    }
+    engineRef.current?.spin();
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1500);
   };
 
   return (
@@ -98,8 +107,8 @@ export default function Shop() {
 
       <header className="top">
         <span className="mark">FFF</span>
-        <button className="cartbtn" onClick={() => setCartOpen(true)} aria-label={`Корзина, товаров: ${count}`}>
-          Корзина <b>{count}</b>
+        <button ref={cartRef} className="cartbtn" onClick={() => setCartOpen(true)} aria-label={`Корзина, товаров: ${count}`}>
+          Корзина <b key={count} className={count ? "bump" : ""}>{count}</b>
         </button>
       </header>
 
@@ -130,7 +139,11 @@ export default function Shop() {
               aria-checked={size === s}
               className={size === s ? "on" : ""}
               aria-label={s}
-              onClick={() => setSizes((v) => ({ ...v, [product.id]: s }))}
+              onClick={() => {
+                setSizes((v) => ({ ...v, [product.id]: s }));
+                const n = product.sizes.length;
+                engineRef.current?.setSize(index, n > 1 ? product.sizes.indexOf(s) / (n - 1) : null);
+              }}
             >
               <Dots text={s === "Один размер" ? "ONE" : s} height={20} grid />
             </button>
@@ -141,8 +154,16 @@ export default function Shop() {
           <button className="arrow" onClick={() => engineRef.current?.step(-1)} disabled={index === 0} aria-label="Предыдущая вещь">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
           </button>
-          <button className="add" onClick={add}>
-            {size ? "Добавить в корзину" : "Выберите размер"}
+          <button className={"add" + (added ? " ok" : "")} onClick={add}>
+            {added ? (
+              <>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>В корзине
+              </>
+            ) : size ? (
+              "Добавить в корзину"
+            ) : (
+              "Выберите размер"
+            )}
           </button>
           <button
             className="arrow"
@@ -155,6 +176,7 @@ export default function Shop() {
         </div>
 
         <nav className="cats" aria-label="Категории">
+          <span className="pill" style={{ transform: `translateX(${CATEGORIES.findIndex((c) => c.id === cat) * 100}%)` }} aria-hidden="true" />
           {CATEGORIES.map((c) => (
             <button key={c.id} className={c.id === cat ? "on" : ""} aria-current={c.id === cat} onClick={() => chooseCategory(c.id)}>
               {c.label}
@@ -163,9 +185,20 @@ export default function Shop() {
         </nav>
       </section>
 
-      <div className={"toast" + (toast ? " show" : "")} role="status">
-        {toast}
+      <div className="sr" role="status">
+        {added ? `${product.name} в корзине` : ""}
       </div>
+      {fly && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={fly.key}
+          className="fly"
+          src={fly.src}
+          alt=""
+          style={{ "--dx": `${fly.dx}px`, "--dy": `${fly.dy}px` } as React.CSSProperties}
+          onAnimationEnd={() => setFly(null)}
+        />
+      )}
 
       {cartOpen && (
         <div className="scrim" onClick={() => setCartOpen(false)}>
@@ -181,7 +214,7 @@ export default function Shop() {
                 <ul>
                   {cart.map((l) => (
                     <li key={l.key}>
-                      <i style={{ background: l.product.tint ?? l.product.color }} />
+                      <i style={{ backgroundImage: `url(${l.product.image})` }} />
                       <div>
                         <b>{l.product.name}</b>
                         <span>

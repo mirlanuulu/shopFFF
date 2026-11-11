@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CATEGORIES, type CategoryId, type Product } from "./products";
-import { buildProduct, chrome, HOOK_TOP } from "./builders";
+import { buildProduct, chrome, RAIL_R } from "./builders";
 
 type Item = {
   group: THREE.Group; // placed by the layout
@@ -12,6 +12,11 @@ type Item = {
   hover: number;
   spinT: number; // 0..1 while spinning, otherwise 1
   seed: number;
+  size: number; // scale from the chosen size, on a spring
+  sizeV: number;
+  sizeTo: number;
+  hook?: THREE.Object3D;
+  mid?: THREE.Object3D;
 };
 
 type Stage = {
@@ -21,6 +26,7 @@ type Stage = {
   p: number; // scroll position in item units
   target: number;
   pres: number; // 0..1 presence
+  side: number; // which side it slides in from / out to
 };
 
 type Callbacks = { onIndex: (cat: CategoryId, i: number) => void };
@@ -49,11 +55,15 @@ export class Engine {
   private ro: ResizeObserver;
   private disposed = false;
   private keyLight: THREE.DirectionalLight;
+  private viewW = 3;
+  private awake = 120; // frames to keep drawing regardless of motion
+  private energy = 0;
 
   constructor(private canvas: HTMLCanvasElement, private cb: Callbacks) {
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2));
+    THREE.DefaultLoadingManager.onLoad = () => (this.awake = 30);
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
@@ -93,19 +103,19 @@ export class Engine {
       group.add(inner);
       root.add(group);
       group.traverse((o) => (o.userData.item = i));
-      return { group, inner, product, swing: 0, swingV: 0, hover: 0, spinT: 1, seed: i * 1.7 + 0.3 };
+      return { group, inner, product, swing: 0, swingV: 0, hover: 0, spinT: 1, seed: i * 1.7 + 0.3, size: 1, sizeV: 0, sizeTo: 1 };
     });
 
     if (id === "tops") {
-      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 40, 16), chrome());
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, 40, 16), chrome());
       rail.rotation.z = Math.PI / 2;
-      rail.position.y = 0.9 + HOOK_TOP - 0.045;
+      rail.position.y = RAIL_Y;
       root.add(rail);
     }
     if (id === "bottoms") {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, 0.024, 12, 120), chrome());
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, RAIL_R, 12, 120), chrome());
       ring.rotation.x = Math.PI / 2;
-      ring.position.set(0, 1.08 + HOOK_TOP - 0.045, -RING_R);
+      ring.position.set(0, RING_Y, -RING_R);
       root.add(ring);
     }
     if (id === "shoes") {
@@ -126,14 +136,36 @@ export class Engine {
       }
     }
     this.scene.add(root);
-    this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0 });
+    this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0, side: 0 });
   }
 
   /* ---------- public api ---------- */
 
   setCategory(id: CategoryId) {
+    if (id === this.active) return;
+    // categories behave like one long strip: the next one arrives from the side its tab is on
+    const order = CATEGORIES.map((c) => c.id);
+    const dir = Math.sign(order.indexOf(id) - order.indexOf(this.active));
+    const next = this.stages.get(id)!;
+    this.stages.get(this.active)!.side = -dir;
+    next.side = dir;
+    for (const it of next.items) it.swingV -= dir * 5;
     this.active = id;
     this.hovered = -1;
+  }
+
+  /** k: 0..1 across the size run, or null when nothing is chosen */
+  setSize(i: number, k: number | null) {
+    const it = this.stages.get(this.active)!.items[i];
+    if (!it) return;
+    it.sizeTo = k === null ? 1 : 0.93 + 0.14 * k;
+    it.sizeV += 1.6; // a small pop even when the size barely changes
+  }
+
+  spin() {
+    const s = this.stages.get(this.active)!;
+    const it = s.items[Math.round(s.target)];
+    if (it) it.spinT = 0;
   }
 
   setIndex(i: number) {
@@ -274,6 +306,8 @@ export class Engine {
     this.camera.aspect = aspect;
     // keep ~2.5 world units across on phones, never less than 4.3 units tall
     this.viewH = Math.max(4.3, 2.5 / aspect);
+    this.viewW = this.viewH * aspect;
+    this.awake = 30;
     const dist = this.viewH / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
     this.camera.position.set(0, 0, dist);
     this.camera.updateProjectionMatrix();
@@ -286,23 +320,28 @@ export class Engine {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     const t = now / 1000;
+    this.energy = this.ptrSmooth.distanceTo(this.pointer);
     this.ptrSmooth.lerp(this.pointer, 1 - Math.exp(-6 * dt));
 
     for (const s of this.stages.values()) {
       const on = s.id === this.active;
-      s.pres = damp(s.pres, on ? 1 : 0, on ? 4.2 : 6.5, dt);
+      this.energy += Math.abs((on ? 1 : 0) - s.pres);
+      s.pres = damp(s.pres, on ? 1 : 0, 5, dt);
       s.root.visible = s.pres > 0.004;
       if (!s.root.visible) continue;
       const e = smooth(clamp(s.pres, 0, 1));
-      s.root.position.set(0, this.baseY + (on ? -(1 - e) * 1.4 : (1 - e) * 2.2), -(1 - e) * 6);
-      s.root.scale.setScalar(0.55 + 0.45 * e);
+      s.root.position.set(s.side * (1 - e) * (this.viewW + 1.2), this.baseY, -(1 - e) * 1.2);
 
       const prev = s.p;
       if (!(on && this.drag)) s.p = damp(s.p, s.target, 8.5, dt);
       const vel = (s.p - prev) / Math.max(dt, 1e-4);
+      this.energy += Math.abs(s.p - prev) * 10;
       this.layout(s, vel, dt, t, on);
     }
-    this.renderer.render(this.scene, this.camera);
+    // tops and bottoms are still when nobody touches them, so there is nothing to redraw
+    const drifting = !this.reduced && (this.active === "shoes" || this.active === "accessories");
+    if (this.awake > 0) this.awake--;
+    if (this.energy > 0.002 || this.drag || drifting || this.awake > 0) this.renderer.render(this.scene, this.camera);
   };
 
   private layout(s: Stage, vel: number, dt: number, t: number, on: boolean) {
@@ -318,6 +357,15 @@ export class Engine {
       it.swingV += (-70 * it.swing - 7 * it.swingV - vel * 9) * dt;
       it.swing = clamp(it.swing + it.swingV * dt, -0.6, 0.6);
 
+      it.sizeV += (-140 * (it.size - it.sizeTo) - 11 * it.sizeV) * dt;
+      it.size += it.sizeV * dt;
+      this.energy += Math.abs(it.swing) + Math.abs(it.swingV) * 0.05 + Math.abs(it.sizeV) + Math.abs(it.size - it.sizeTo);
+      this.energy += Math.abs((on && this.hovered === i ? 1 : 0) - it.hover) * 0.2;
+      if (it.spinT < 1) this.energy += 1;
+      it.hook ??= it.inner.getObjectByName("hookPivot");
+      it.mid ??= it.inner.getObjectByName("mid");
+      if (it.mid) it.mid.visible = ad < 2.2;
+
       if (it.spinT < 1) it.spinT = Math.min(1, it.spinT + dt / 0.95);
       const spin = smooth(it.spinT) * TAU;
       const look = face * this.ptrSmooth.x * 0.32;
@@ -327,19 +375,20 @@ export class Engine {
       switch (s.id) {
         case "tops": {
           // straight rail: garments hang edge-on, the one in focus turns to the viewer
-          g.position.set(d * 1.12, 0.9, -Math.min(ad, 3) * 0.12 + face * 0.35);
+          g.position.set(d * 1.12, RAIL_Y, 0);
           n.rotation.set(0, 1.28 * (1 - face) + look + spin, it.swing * 0.5 * calm);
-          n.rotation.x = Math.abs(it.swing) * 0.15;
-          g.scale.setScalar(0.92 + face * 0.1);
-          g.visible = ad < 6;
+          g.scale.setScalar((0.92 + face * 0.1) * it.size);
+          if (it.hook) it.hook.rotation.y = Math.PI / 2 - n.rotation.y; // stays across the rail
+          g.visible = ad < 4;
           break;
         }
         case "bottoms": {
           // dry-cleaner carousel: a ring that carries trousers around to the front
           const a = d * 0.42;
-          g.position.set(Math.sin(a) * RING_R, 1.08, Math.cos(a) * RING_R - RING_R + face * 0.3);
+          g.position.set(Math.sin(a) * RING_R, RING_Y, Math.cos(a) * RING_R - RING_R);
           n.rotation.set(0, a + 1.2 * (1 - face) + look + spin, it.swing * 0.45 * calm);
-          g.scale.setScalar(0.9 + face * 0.06);
+          g.scale.setScalar((0.9 + face * 0.06) * it.size);
+          if (it.hook) it.hook.rotation.y = a + Math.PI / 2 - n.rotation.y; // stays across the ring
           g.visible = Math.abs(a) < Math.PI * 0.9;
           break;
         }
@@ -349,7 +398,7 @@ export class Engine {
           g.position.set(d * 1.3, -0.1 - Math.min(ad, 2) * 0.22, -Math.min(ad, 3) * 0.9);
           n.position.y = face * 0.34 + bob;
           n.rotation.set(0, (1 - face) * 1.05 + look * 1.2 + spin, it.swing * 0.2);
-          n.scale.setScalar(0.86 + face * 0.2);
+          n.scale.setScalar((0.86 + face * 0.2) * it.size);
           const halo = g.getObjectByName("halo") as THREE.Mesh | undefined;
           if (halo) (halo.material as THREE.MeshBasicMaterial).opacity = 0.15 + face * 0.85;
           g.visible = ad < 4;
@@ -364,7 +413,7 @@ export class Engine {
             free * (t * 0.45 + it.seed * 2) + look * 1.3 + spin,
             free * Math.sin(t * 0.35 + it.seed) * 0.5 + it.swing * 0.25
           );
-          g.scale.setScalar(0.72 + face * 0.42);
+          g.scale.setScalar((0.72 + face * 0.42) * it.size);
           g.visible = ad < 4;
         }
       }
@@ -373,3 +422,5 @@ export class Engine {
 }
 
 const RING_R = 2.5;
+const RAIL_Y = 1.18;
+const RING_Y = 1.36;
