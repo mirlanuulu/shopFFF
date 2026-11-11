@@ -82,9 +82,19 @@ export function buildProduct(p: Product): THREE.Object3D {
     const geo = bend(new THREE.PlaneGeometry(w, p.h, 16, 1), k);
     const faceMat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85 });
     const edgeMat = new THREE.MeshStandardMaterial({ map: tex, color: "#6f6a66", alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+    // with a photo of the back, turning the thing shows its real other side
+    let backMat = faceMat;
+    if (p.back) {
+      const bt = textures.load(p.back);
+      bt.colorSpace = THREE.SRGBColorSpace;
+      bt.wrapS = THREE.RepeatWrapping;
+      bt.repeat.x = -1;
+      backMat = faceMat.clone();
+      backMat.map = bt;
+    }
     for (let i = 0; i < LAYERS; i++) {
       const face = i === 0 || i === LAYERS - 1;
-      const m = new THREE.Mesh(geo, face ? faceMat : edgeMat);
+      const m = new THREE.Mesh(geo, i === 0 ? faceMat : face ? backMat : edgeMat);
       m.position.z = THICK / 2 - (i * THICK) / (LAYERS - 1);
       (face ? body : mid).add(m);
     }

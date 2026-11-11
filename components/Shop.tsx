@@ -16,6 +16,7 @@ export default function Shop() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [added, setAdded] = useState(false);
+  const [open, setOpen] = useState(false);
   const [fly, setFly] = useState<{ key: number; src: string; dx: number; dy: number } | null>(null);
   const cartRef = useRef<HTMLButtonElement>(null);
   const cartOpenRef = useRef(false);
@@ -40,6 +41,7 @@ export default function Shop() {
       .then(({ Engine }) => {
         if (dead || !canvasRef.current) return;
         engine = new Engine(canvasRef.current, {
+          onOpen: () => setOpen(true),
           onIndex: (c, i) => {
             setIndexes((s) => ({ ...s, [c]: i }));
             setTouched(true);
@@ -59,13 +61,27 @@ export default function Shop() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" && !cartOpenRef.current) engineRef.current?.step(1);
       if (e.key === "ArrowLeft" && !cartOpenRef.current) engineRef.current?.step(-1);
-      if (e.key === "Escape") setCartOpen(false);
+      if (e.key === "Escape") {
+        setCartOpen(false);
+        setOpen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    engineRef.current?.setDetail(open);
+  }, [open]);
+
+  const pickSize = (s: string) => {
+    setSizes((v) => ({ ...v, [product.id]: s }));
+    const n = product.sizes.length;
+    engineRef.current?.setSize(index, n > 1 ? product.sizes.indexOf(s) / (n - 1) : null);
+  };
+
   const chooseCategory = useCallback((id: CategoryId) => {
+    setOpen(false);
     setCat(id);
     engineRef.current?.setCategory(id);
   }, []);
@@ -94,7 +110,7 @@ export default function Shop() {
   };
 
   return (
-    <main className="shop">
+    <main className={"shop" + (open ? " detail" : "")}>
       <div className="bg" aria-hidden="true">
         <i /><i /><i /><i />
       </div>
@@ -112,9 +128,13 @@ export default function Shop() {
         </button>
       </header>
 
-      {!touched && <p className="swipe" aria-hidden="true">Листайте в сторону</p>}
+      {!touched && !open && <p className="swipe" aria-hidden="true">Листайте в сторону</p>}
 
-      <section className="dock">
+      <section className={"dock" + (open ? " open" : "") + (category.guide ? " guided" : "")}>
+        <button className="more" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <i aria-hidden="true" />
+          {open ? "Свернуть" : "Подробнее"}
+        </button>
         <div className="info" key={product.id}>
           <div className="title">
             <h1>{product.name}</h1>
@@ -131,6 +151,43 @@ export default function Shop() {
           </div>
         </div>
 
+        <div className="details" aria-hidden={!open}>
+          <div className="scroll" key={product.id}>
+            <p className="turn">Потяните вещь в сторону, чтобы повернуть её.</p>
+            <dl>
+              <dt>Состав</dt>
+              <dd>{product.material}</dd>
+              <dt>Уход</dt>
+              <dd>{category.care}</dd>
+            </dl>
+            {category.guide && (
+              <table>
+                <caption>Размеры, см</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Размер</th>
+                    {category.guide.cols.map((c) => (
+                      <th scope="col" key={c}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {product.sizes.map((s) => (
+                    <tr key={s} className={size === s ? "on" : ""} onClick={() => pickSize(s)}>
+                      <th scope="row">
+                        <Dots text={s} height={14} />
+                      </th>
+                      {category.guide!.rows[s].map((n, i) => (
+                        <td key={i}>{String(n).replace(".", ",")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
         <div className={"sizes" + (nudge ? " nudge" : "")} role="radiogroup" aria-label="Размер">
           {product.sizes.map((s) => (
             <button
@@ -139,11 +196,7 @@ export default function Shop() {
               aria-checked={size === s}
               className={size === s ? "on" : ""}
               aria-label={s}
-              onClick={() => {
-                setSizes((v) => ({ ...v, [product.id]: s }));
-                const n = product.sizes.length;
-                engineRef.current?.setSize(index, n > 1 ? product.sizes.indexOf(s) / (n - 1) : null);
-              }}
+              onClick={() => pickSize(s)}
             >
               <Dots text={s === "Один размер" ? "ONE" : s} height={20} grid />
             </button>

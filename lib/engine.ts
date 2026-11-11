@@ -15,6 +15,7 @@ type Item = {
   size: number; // scale from the chosen size, on a spring
   sizeV: number;
   sizeTo: number;
+  turn: number; // free rotation while the product card is open
   hook?: THREE.Object3D;
   mid?: THREE.Object3D;
 };
@@ -30,7 +31,7 @@ type Stage = {
   rail?: THREE.Object3D;
 };
 
-type Callbacks = { onIndex: (cat: CategoryId, i: number) => void };
+type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void };
 
 const TAU = Math.PI * 2;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -51,7 +52,7 @@ export class Engine {
   private ptrSmooth = new THREE.Vector2(0, 0);
   private ray = new THREE.Raycaster();
   private hovered = -1;
-  private drag: { id: number; x0: number; p0: number; lastX: number; lastT: number; v: number; moved: number } | null = null;
+  private drag: { id: number; x0: number; p0: number; turn0: number; lastX: number; lastT: number; v: number; moved: number } | null = null;
   private reduced = false;
   private ro: ResizeObserver;
   private disposed = false;
@@ -59,6 +60,9 @@ export class Engine {
   private viewW = 3;
   private awake = 120; // frames to keep drawing regardless of motion
   private energy = 0;
+  private detail = false;
+  private dm = 0; // 0..1, how far the product card is open
+  private blur = -1;
 
   constructor(private canvas: HTMLCanvasElement, private cb: Callbacks) {
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -104,7 +108,7 @@ export class Engine {
       group.add(inner);
       root.add(group);
       group.traverse((o) => (o.userData.item = i));
-      return { group, inner, product, swing: 0, swingV: 0, hover: 0, spinT: 1, seed: i * 1.7 + 0.3, size: 1, sizeV: 0, sizeTo: 1 };
+      return { group, inner, product, swing: 0, swingV: 0, hover: 0, spinT: 1, seed: i * 1.7 + 0.3, size: 1, sizeV: 0, sizeTo: 1, turn: 0 };
     });
 
     if (id === "tops") {
@@ -164,6 +168,12 @@ export class Engine {
     it.sizeV += 1.6; // a small pop even when the size barely changes
   }
 
+  /** Product card: the thing moves up, its neighbours step aside, dragging turns it. */
+  setDetail(open: boolean) {
+    this.detail = open;
+    if (!open) for (const s of this.stages.values()) for (const it of s.items) it.turn = ((((it.turn + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+  }
+
   spin() {
     const s = this.stages.get(this.active)!;
     const it = s.items[Math.round(s.target)];
@@ -219,7 +229,8 @@ export class Engine {
   private onDown = (e: PointerEvent) => {
     const s = this.stages.get(this.active)!;
     this.canvas.setPointerCapture(e.pointerId);
-    this.drag = { id: e.pointerId, x0: e.clientX, p0: s.p, lastX: e.clientX, lastT: e.timeStamp, v: 0, moved: 0 };
+    const it = s.items[Math.round(s.target)];
+    this.drag = { id: e.pointerId, x0: e.clientX, p0: s.p, turn0: it?.turn ?? 0, lastX: e.clientX, lastT: e.timeStamp, v: 0, moved: 0 };
   };
 
   private onMove = (e: PointerEvent) => {
@@ -230,6 +241,11 @@ export class Engine {
       const s = this.stages.get(this.active)!;
       const dx = e.clientX - d.x0;
       d.moved = Math.max(d.moved, Math.abs(dx));
+      if (this.detail) {
+        const it = s.items[Math.round(s.target)];
+        if (it) it.turn = d.turn0 + dx * 0.012;
+        return;
+      }
       let p = d.p0 - dx / this.pxPerItem();
       const max = s.items.length - 1;
       if (p < 0) p *= 0.35;
@@ -253,12 +269,14 @@ export class Engine {
     if (d.moved < 7) {
       const i = this.pick(e.clientX, e.clientY);
       if (i >= 0) {
-        if (i === Math.round(s.target)) s.items[i].spinT = 0;
+        if (this.detail) s.items[Math.round(s.target)].spinT = 0;
+        else if (i === Math.round(s.target)) this.cb.onOpen();
         else this.go(s, i);
       }
       s.target = clamp(Math.round(s.target), 0, s.items.length - 1);
       return;
     }
+    if (this.detail) return;
     const flick = clamp(d.v * 0.22, -2.4, 2.4);
     this.go(s, Math.round(s.p + flick));
   };
@@ -325,6 +343,10 @@ export class Engine {
     this.energy = this.ptrSmooth.distanceTo(this.pointer);
     this.ptrSmooth.lerp(this.pointer, 1 - Math.exp(-6 * dt));
 
+    const dmTo = this.detail ? 1 : 0;
+    this.energy += Math.abs(dmTo - this.dm);
+    this.dm = Math.abs(dmTo - this.dm) < 0.001 ? dmTo : damp(this.dm, dmTo, 7, dt);
+
     for (const s of this.stages.values()) {
       const on = s.id === this.active;
       this.energy += Math.abs((on ? 1 : 0) - s.pres);
@@ -332,7 +354,10 @@ export class Engine {
       s.root.visible = s.pres > 0.004;
       if (!s.root.visible) continue;
       const e = smooth(clamp(s.pres, 0, 1));
-      s.root.position.set(s.side * (1 - e) * (this.viewW + 1.2), this.baseY, -(1 - e) * 1.2);
+      // far enough that the ring and the neighbouring clothes are off screen before the stage is switched off
+      const dm = on ? this.dm : 0;
+      s.root.position.set(s.side * (1 - e) * (this.viewW / 2 + 5.5), this.baseY + (this.viewH * 0.285 - this.baseY) * dm, -(1 - e) * 1.2);
+      s.root.scale.setScalar(1 - 0.4 * dm);
       // the rail is far longer than the screen, so it travels its whole length and leaves with the clothes
       if (s.rail) s.rail.position.x = s.side * (1 - e) * RAIL_LEN;
 
@@ -342,6 +367,16 @@ export class Engine {
       this.energy += Math.abs(s.p - prev) * 10;
       this.layout(s, vel, dt, t, on);
     }
+    // while categories change places the whole scene goes soft, like motion blur
+    const act = this.stages.get(this.active)!;
+    const ea = smooth(clamp(act.pres, 0, 1));
+    const k = this.reduced ? 0 : Math.round(4 * ea * (1 - ea) * 20) / 20;
+    if (k !== this.blur) {
+      this.blur = k;
+      this.canvas.style.filter = k > 0 ? `blur(${(k * 14).toFixed(1)}px)` : "";
+      this.canvas.style.opacity = String(1 - 0.3 * k);
+    }
+
     // tops and bottoms are still when nobody touches them, so there is nothing to redraw
     const drifting = !this.reduced && (this.active === "shoes" || this.active === "accessories");
     if (this.awake > 0) this.awake--;
@@ -371,7 +406,12 @@ export class Engine {
       if (it.mid) it.mid.visible = ad < 2.2;
 
       if (it.spinT < 1) it.spinT = Math.min(1, it.spinT + dt / 0.95);
-      const spin = smooth(it.spinT) * TAU;
+      const focused = on && i === Math.round(s.target);
+      if (!this.detail && it.turn !== 0) {
+        this.energy += Math.abs(it.turn);
+        it.turn = Math.abs(it.turn) < 0.002 ? 0 : damp(it.turn, 0, 7, dt);
+      }
+      const spin = smooth(it.spinT) * TAU + it.turn;
       const look = face * this.ptrSmooth.x * 0.32;
       const g = it.group;
       const n = it.inner;
@@ -421,6 +461,7 @@ export class Engine {
           g.visible = ad < 4;
         }
       }
+      if (on && this.dm > 0 && !focused) g.position.x += Math.sign(d || 1) * this.dm * 5;
     }
   }
 }
