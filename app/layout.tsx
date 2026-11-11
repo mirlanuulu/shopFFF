@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource-variable/unbounded";
-import "@fontsource-variable/onest";
+import "@fontsource-variable/manrope";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +12,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#150807",
+  themeColor: "#e6e0d6",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

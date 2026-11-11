@@ -56,7 +56,7 @@ function printTexture(text: string, color: string) {
   g.fillStyle = color;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.font = `900 ${text.length > 2 ? 150 : 190}px "Unbounded Variable", "Arial Black", sans-serif`;
+  g.font = `800 ${text.length > 2 ? 150 : 190}px "Manrope Variable", "Arial Black", sans-serif`;
   g.fillText(text, 256, 136);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -394,7 +394,48 @@ function buildAccessory(p: Product) {
   return g;
 }
 
+/* ---------- real product photos ---------- */
+
+const textures = new THREE.TextureLoader();
+const LAYERS = 14;
+const THICK = 0.06;
+
+/** A cut-out photo given body: bent like fabric and stacked in layers so it has an edge when it turns. */
+function buildPhoto(p: Product) {
+  const g = new THREE.Group();
+  const h = p.h ?? 1.2;
+  const body = new THREE.Group();
+  g.add(body);
+  const k = p.hang === "hook" ? 0.16 : p.hang === "clip" ? 0.07 : 0.04;
+  textures.load(p.image!, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    const img = tex.image as { width: number; height: number };
+    const w = (h * img.width) / img.height;
+    if (p.hang === "hook") g.add(hook(chrome()));
+    if (p.hang === "clip") g.add(clipHanger(w * 0.85));
+    const geo = bend(new THREE.PlaneGeometry(w, h, 24, 1), k);
+    for (let i = 0; i < LAYERS; i++) {
+      const face = i === 0 || i === LAYERS - 1;
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        color: face ? "#ffffff" : "#6f6a66",
+        alphaTest: 0.5,
+        alphaToCoverage: true,
+        side: THREE.DoubleSide,
+        roughness: 0.85,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.z = THICK / 2 - (i * THICK) / (LAYERS - 1);
+      body.add(m);
+    }
+  });
+  body.position.y = p.hang === "none" ? 0 : -h / 2 + (p.hang === "hook" ? 0.03 : -0.02);
+  return g;
+}
+
 export function buildProduct(p: Product): THREE.Object3D {
+  if (p.image) return buildPhoto(p);
   switch (p.kind) {
     case "tee":
     case "hoodie":

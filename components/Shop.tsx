@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Engine } from "@/lib/engine";
+import Dots from "./Dots";
 import { CATEGORIES, formatPrice, type CategoryId, type Product } from "@/lib/products";
 
 type CartLine = { key: string; product: Product; size: string; qty: number };
@@ -85,8 +86,9 @@ export default function Shop() {
 
   return (
     <main className="shop">
-      <video className="bg" src="/bg.mp4" poster="/bg-poster.jpg" autoPlay muted loop playsInline aria-hidden="true" />
-      <div className="veil" aria-hidden="true" />
+      <div className="bg" aria-hidden="true">
+        <i /><i /><i /><i />
+      </div>
       <div className="ghost" key={cat} style={{ "--n": category.ghost.length } as React.CSSProperties} aria-hidden="true">
         {category.ghost}
       </div>
@@ -110,7 +112,10 @@ export default function Shop() {
             <p>{product.note}</p>
           </div>
           <div className="meta">
-            <strong>{formatPrice(product.price)}</strong>
+            <strong aria-label={formatPrice(product.price)}>
+              <Dots text={formatPrice(product.price).replace(" сом", "")} height={22} />
+              <small>сом</small>
+            </strong>
             <span>
               {index + 1} из {category.products.length}
             </span>
@@ -124,9 +129,10 @@ export default function Shop() {
               role="radio"
               aria-checked={size === s}
               className={size === s ? "on" : ""}
+              aria-label={s}
               onClick={() => setSizes((v) => ({ ...v, [product.id]: s }))}
             >
-              {s}
+              <Dots text={s === "Один размер" ? "ONE" : s} height={20} grid />
             </button>
           ))}
         </div>

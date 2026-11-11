@@ -8,4 +8,3 @@
 - `components/Shop.tsx` — интерфейс
 - `public/bg.mp4` — фоновое видео
 
-Модель кроссовка: «Materials Variants Shoe», Shopify / Khronos glTF Sample Assets, CC BY 4.0.

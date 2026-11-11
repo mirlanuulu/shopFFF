@@ -15,7 +15,8 @@ export type Kind =
   | "tote"
   | "shades"
   | "beanie"
-  | "crossbody";
+  | "crossbody"
+  | "photo";
 
 export type Product = {
   id: string;
@@ -30,6 +31,10 @@ export type Product = {
   variant?: string;
   tint?: string;
   sizes: string[];
+  /** фото товара с прозрачным фоном и его высота в сцене */
+  image?: string;
+  h?: number;
+  hang?: "hook" | "clip" | "none";
 };
 
 export type Category = {
@@ -53,7 +58,7 @@ export const PALETTE = {
   chrome: "#c9cfdd",
 };
 
-// Черновой каталог. Перед релизом заменить на свои товары.
+// Черновой каталог: фото-заглушки. Перед релизом заменить на свои товары.
 export const CATEGORIES: Category[] = [
   {
     id: "tops",
@@ -61,12 +66,16 @@ export const CATEGORIES: Category[] = [
     ghost: "ВЕРХ",
     hint: "Рейл с вешалками",
     products: [
-      { id: "t1", name: "Футболка Zero", note: "Плотный хлопок 240 г", price: 2900, kind: "tee", color: "#fff1dc", accent: "#ff5a1f", print: "FFF", sizes: TOP },
-      { id: "t2", name: "Худи Orbit", note: "Футер с начёсом, оверсайз", price: 5900, kind: "hoodie", color: "#2340ff", accent: "#fff1dc", sizes: TOP },
-      { id: "t3", name: "Пуховик Ember", note: "Лёгкий утеплитель, до −15°", price: 12900, kind: "puffer", color: "#17171c", accent: "#ff5a1f", sizes: TOP },
-      { id: "t4", name: "Лонгслив 06", note: "Тонкий трикотаж", price: 3900, kind: "longsleeve", color: "#ff5a1f", accent: "#150807", print: "06", sizes: TOP },
-      { id: "t5", name: "Бомбер Chrome", note: "Нейлон с отливом", price: 9900, kind: "bomber", color: "#aeb6c8", accent: "#2340ff", sizes: TOP },
-      { id: "t6", name: "Футболка Night", note: "Плотный хлопок 240 г", price: 2900, kind: "tee", color: "#17171c", accent: "#2340ff", print: "FFF", sizes: TOP },
+      { id: "coat", name: "Пальто Mono", note: "Шерсть, прямой крой", price: 18900, kind: "photo", color: "#1c1b1b", sizes: TOP, image: "/products/coat.webp", h: 1.8, hang: "hook" },
+      { id: "sweater", name: "Свитер Moss", note: "Меланжевая шерсть", price: 6900, kind: "photo", color: "#4a423c", sizes: TOP, image: "/products/sweater.webp", h: 1.2, hang: "hook" },
+      { id: "jacket", name: "Куртка Utility", note: "Хлопок и шерсть, четыре кармана", price: 9900, kind: "photo", color: "#3a3938", sizes: TOP, image: "/products/jacket.webp", h: 1.2, hang: "hook" },
+      { id: "sweatshirt", name: "Свитшот Fog", note: "Плотный футер", price: 4900, kind: "photo", color: "#c9c9c9", sizes: TOP, image: "/products/sweatshirt.webp", h: 1.2, hang: "hook" },
+      { id: "puffer", name: "Пуховик Cloud", note: "Лёгкий пух, воротник-стойка", price: 12900, kind: "photo", color: "#1e1e1f", sizes: TOP, image: "/products/puffer.webp", h: 1.2, hang: "hook" },
+      { id: "tee", name: "Футболка Zero", note: "Плотный хлопок", price: 2900, kind: "photo", color: "#141414", sizes: TOP, image: "/products/tee.webp", h: 1.15, hang: "hook" },
+      { id: "vneck", name: "Джемпер V", note: "Свободная посадка", price: 6400, kind: "photo", color: "#333333", sizes: TOP, image: "/products/vneck.webp", h: 1.2, hang: "hook" },
+      { id: "longsleeve", name: "Лонгслив Ash", note: "Мягкий трикотаж", price: 3400, kind: "photo", color: "#9a9a98", sizes: TOP, image: "/products/longsleeve.webp", h: 1.2, hang: "hook" },
+      { id: "trench", name: "Тренч Shade", note: "Двубортный, с поясом", price: 16900, kind: "photo", color: "#1b1b1c", sizes: TOP, image: "/products/trench.webp", h: 1.8, hang: "hook" },
+      { id: "polo", name: "Поло Knit", note: "Тонкая вязка", price: 5900, kind: "photo", color: "#151515", sizes: TOP, image: "/products/polo.webp", h: 1.2, hang: "hook" },
     ],
   },
   {
@@ -75,11 +84,10 @@ export const CATEGORIES: Category[] = [
     ghost: "НИЗ",
     hint: "Карусель по кругу",
     products: [
-      { id: "b1", name: "Карго Shift", note: "Рипстоп, шесть карманов", price: 6900, kind: "cargo", color: "#3a3d2c", accent: "#ff5a1f", sizes: BOTTOM },
-      { id: "b2", name: "Брюки Wide", note: "Свободный крой, стрелки", price: 5900, kind: "pants", color: "#fff1dc", sizes: BOTTOM },
-      { id: "b3", name: "Шорты Lap", note: "Быстросохнущая ткань", price: 3400, kind: "shorts", color: "#2340ff", accent: "#fff1dc", sizes: BOTTOM },
-      { id: "b4", name: "Юбка Arc", note: "Трапеция, плотная саржа", price: 4900, kind: "skirt", color: "#17171c", accent: "#ff5a1f", sizes: BOTTOM },
-      { id: "b5", name: "Брюки Signal", note: "Прямой крой", price: 5900, kind: "pants", color: "#c2410c", sizes: BOTTOM },
+      { id: "jeans-blue", name: "Джинсы Indigo", note: "Прямые, варёный деним", price: 5900, kind: "photo", color: "#4d6f95", sizes: BOTTOM, image: "/products/jeans-blue.webp", h: 1.5, hang: "clip" },
+      { id: "pants-black", name: "Брюки Wide", note: "Широкие, плотный хлопок", price: 5900, kind: "photo", color: "#2b2826", sizes: BOTTOM, image: "/products/pants-black.webp", h: 1.5, hang: "clip" },
+      { id: "jeans-dark", name: "Джинсы Raw", note: "Прямые, сырой деним", price: 6400, kind: "photo", color: "#262a33", sizes: BOTTOM, image: "/products/jeans-dark.webp", h: 1.5, hang: "clip" },
+      { id: "jogger", name: "Джоггеры Pleat", note: "Защипы, резинка на поясе", price: 4900, kind: "photo", color: "#1d1d1d", sizes: BOTTOM, image: "/products/jogger.webp", h: 1.5, hang: "clip" },
     ],
   },
   {
@@ -88,11 +96,8 @@ export const CATEGORIES: Category[] = [
     ghost: "ОБУВЬ",
     hint: "Левитация над подиумом",
     products: [
-      { id: "s1", name: "Runner Street", note: "Сетка и замша", price: 8900, kind: "shoe", color: "#888", variant: "street", sizes: SHOE },
-      { id: "s2", name: "Runner Midnight", note: "Сетка и замша", price: 8900, kind: "shoe", color: "#223", variant: "midnight", sizes: SHOE },
-      { id: "s3", name: "Runner Beach", note: "Сетка и замша", price: 8900, kind: "shoe", color: "#eca", variant: "beach", sizes: SHOE },
-      { id: "s4", name: "Runner Ember", note: "Лимитированный цвет", price: 9900, kind: "shoe", color: "#f52", variant: "street", tint: "#ff7a3d", sizes: SHOE },
-      { id: "s5", name: "Runner Cobalt", note: "Лимитированный цвет", price: 9900, kind: "shoe", color: "#24f", variant: "street", tint: "#5b74ff", sizes: SHOE },
+      { id: "boots", name: "Челси Gloss", note: "Гладкая кожа", price: 11900, kind: "photo", color: "#2a1c1b", sizes: SHOE, image: "/products/boots.webp", h: 0.95, hang: "none" },
+      { id: "sneakers", name: "Кеды Suede", note: "Замша, тонкая подошва", price: 7900, kind: "photo", color: "#3b3027", sizes: SHOE, image: "/products/sneakers.webp", h: 0.7, hang: "none" },
     ],
   },
   {
@@ -101,11 +106,9 @@ export const CATEGORIES: Category[] = [
     ghost: "ДЕТАЛИ",
     hint: "Невесомость",
     products: [
-      { id: "a1", name: "Кепка Dome", note: "Шесть клиньев, застёжка", price: 1900, kind: "cap", color: "#2340ff", accent: "#fff1dc", sizes: ONE },
-      { id: "a2", name: "Очки Visor", note: "Линзы UV400", price: 3900, kind: "shades", color: "#17171c", accent: "#ff5a1f", sizes: ONE },
-      { id: "a3", name: "Шопер Cargo", note: "Плотный канвас, 18 л", price: 2400, kind: "tote", color: "#fff1dc", accent: "#150807", print: "FFF", sizes: ONE },
-      { id: "a4", name: "Шапка Rib", note: "Шерсть мериноса", price: 1700, kind: "beanie", color: "#ff5a1f", sizes: ONE },
-      { id: "a5", name: "Сумка Pod", note: "Через плечо, 2 л", price: 3200, kind: "crossbody", color: "#17171c", accent: "#c9cfdd", sizes: ONE },
+      { id: "tote", name: "Сумка Carry", note: "Канвас, внешние карманы", price: 4900, kind: "photo", color: "#161616", sizes: ONE, image: "/products/tote.webp", h: 1.15, hang: "none" },
+      { id: "bandana", name: "Платок Dot", note: "Шёлк, 55×55 см", price: 1900, kind: "photo", color: "#2c2c2e", sizes: ONE, image: "/products/bandana.webp", h: 1.05, hang: "none" },
+      { id: "socks", name: "Носки Rib", note: "Шерсть, две пары", price: 1200, kind: "photo", color: "#1f2433", sizes: ONE, image: "/products/socks.webp", h: 1.1, hang: "none" },
     ],
   },
 ];

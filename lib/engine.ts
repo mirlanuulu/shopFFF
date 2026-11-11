@@ -1,7 +1,5 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { CATEGORIES, type CategoryId, type Product } from "./products";
 import { buildProduct, chrome, HOOK_TOP } from "./builders";
 
@@ -68,13 +66,12 @@ export class Engine {
     this.keyLight.position.set(2.5, 4, 6);
     const rim = new THREE.DirectionalLight("#3b5bff", 1.8);
     rim.position.set(-5, 2, -3);
-    const ember = new THREE.PointLight("#ff5a1f", 14, 12);
+    const ember = new THREE.PointLight("#ffd9b8", 6, 12);
     ember.position.set(1.5, -2.2, 2.5);
     this.scene.add(this.keyLight, rim, ember);
 
     for (const c of CATEGORIES) this.buildStage(c.id, c.products);
     this.stages.get("tops")!.pres = 0; // animates in on load
-    this.loadShoes();
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -115,12 +112,12 @@ export class Engine {
       for (const it of items) {
         const disc = new THREE.Mesh(
           new THREE.CylinderGeometry(0.62, 0.62, 0.03, 64),
-          new THREE.MeshPhysicalMaterial({ color: "#1b0c0a", metalness: 0.9, roughness: 0.25, clearcoat: 1 })
+          new THREE.MeshPhysicalMaterial({ color: "#ffffff", metalness: 0, roughness: 0.3, transparent: true, opacity: 0.55 })
         );
         disc.position.y = -0.62;
         const halo = new THREE.Mesh(
           new THREE.TorusGeometry(0.64, 0.012, 8, 80),
-          new THREE.MeshBasicMaterial({ color: "#ff5a1f", transparent: true })
+          new THREE.MeshBasicMaterial({ color: "#2a2422", transparent: true })
         );
         halo.rotation.x = Math.PI / 2;
         halo.position.y = -0.6;
@@ -130,58 +127,6 @@ export class Engine {
     }
     this.scene.add(root);
     this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0 });
-  }
-
-  private async loadShoes() {
-    const loader = new GLTFLoader();
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    let gltf: GLTF;
-    try {
-      gltf = await loader.loadAsync("/models/shoe.glb");
-    } catch (e) {
-      console.warn("shoe model failed to load", e);
-      return;
-    }
-    if (this.disposed) return;
-    const ext = (gltf.parser.json.extensions?.KHR_materials_variants?.variants ?? []) as { name: string }[];
-    const box = new THREE.Box3().setFromObject(gltf.scene);
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const scale = 1.45 / Math.max(size.x, size.y, size.z);
-    // the model's long axis should run along X so the resting pose is a profile view
-    const longZ = size.z > size.x;
-
-    const stage = this.stages.get("shoes")!;
-    for (const [i, it] of stage.items.entries()) {
-      const model = gltf.scene.clone(true);
-      const vi = ext.findIndex((v) => v.name === it.product.variant);
-      const jobs: Promise<void>[] = [];
-      model.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const maps = mesh.userData.gltfExtensions?.KHR_materials_variants?.mappings as
-          | { material: number; variants: number[] }[]
-          | undefined;
-        const m = maps?.find((x) => x.variants.includes(vi));
-        const apply = (mat: THREE.Material) => {
-          if (it.product.tint) {
-            const c = (mat as THREE.MeshStandardMaterial).clone();
-            c.color.multiply(new THREE.Color(it.product.tint));
-            mesh.material = c;
-          } else mesh.material = mat;
-        };
-        if (m) jobs.push(gltf.parser.getDependency("material", m.material).then(apply));
-        else if (it.product.tint) apply(mesh.material as THREE.Material);
-      });
-      await Promise.all(jobs);
-      model.position.sub(center).multiplyScalar(scale);
-      model.scale.setScalar(scale);
-      const holder = new THREE.Group();
-      holder.add(model);
-      if (longZ) holder.rotation.y = Math.PI / 2;
-      holder.traverse((o) => (o.userData.item = i));
-      it.inner.add(holder);
-    }
   }
 
   /* ---------- public api ---------- */
@@ -232,7 +177,9 @@ export class Engine {
     const v = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this.ray.setFromCamera(v, this.camera);
     const hit = this.ray.intersectObject(this.stages.get(this.active)!.root, true)[0];
-    return hit && typeof hit.object.userData.item === "number" ? (hit.object.userData.item as number) : -1;
+    let o: THREE.Object3D | null = hit?.object ?? null;
+    while (o && typeof o.userData.item !== "number") o = o.parent;
+    return o ? (o.userData.item as number) : -1;
   }
 
   private onDown = (e: PointerEvent) => {
@@ -401,7 +348,7 @@ export class Engine {
           const bob = Math.sin(t * 1.3 + it.seed) * 0.05 * calm;
           g.position.set(d * 1.3, -0.1 - Math.min(ad, 2) * 0.22, -Math.min(ad, 3) * 0.9);
           n.position.y = face * 0.34 + bob;
-          n.rotation.set(face * 0.22, face * -0.85 + look * 1.4 + spin + (1 - face) * Math.sin(t * 0.4 + it.seed) * 0.12 * calm, face * 0.08 + it.swing * 0.2);
+          n.rotation.set(0, (1 - face) * 1.05 + look * 1.2 + spin, it.swing * 0.2);
           n.scale.setScalar(0.86 + face * 0.2);
           const halo = g.getObjectByName("halo") as THREE.Mesh | undefined;
           if (halo) (halo.material as THREE.MeshBasicMaterial).opacity = 0.15 + face * 0.85;
@@ -413,8 +360,8 @@ export class Engine {
           const free = (1 - face) * calm;
           g.position.set(d * 1.2, Math.sin(d * 1.25) * 0.55 + Math.sin(t * 0.7 + it.seed) * 0.08 * calm, -Math.min(ad, 3) * 0.85 + face * 0.4);
           n.rotation.set(
-            free * (0.5 + Math.sin(t * 0.5 + it.seed) * 0.5) + face * 0.12,
-            free * (t * 0.45 + it.seed * 2) + face * -0.35 + look * 1.3 + spin,
+            free * Math.sin(t * 0.5 + it.seed) * 0.35,
+            free * (t * 0.45 + it.seed * 2) + look * 1.3 + spin,
             free * Math.sin(t * 0.35 + it.seed) * 0.5 + it.swing * 0.25
           );
           g.scale.setScalar(0.72 + face * 0.42);
