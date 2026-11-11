@@ -27,6 +27,7 @@ type Stage = {
   target: number;
   pres: number; // 0..1 presence
   side: number; // which side it slides in from / out to
+  rail?: THREE.Object3D;
 };
 
 type Callbacks = { onIndex: (cat: CategoryId, i: number) => void };
@@ -107,9 +108,10 @@ export class Engine {
     });
 
     if (id === "tops") {
-      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, 40, 16), chrome());
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, RAIL_LEN, 16), chrome());
       rail.rotation.z = Math.PI / 2;
       rail.position.y = RAIL_Y;
+      rail.name = "rail";
       root.add(rail);
     }
     if (id === "bottoms") {
@@ -136,7 +138,7 @@ export class Engine {
       }
     }
     this.scene.add(root);
-    this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0, side: 0 });
+    this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0, side: 0, rail: root.getObjectByName("rail") });
   }
 
   /* ---------- public api ---------- */
@@ -331,6 +333,8 @@ export class Engine {
       if (!s.root.visible) continue;
       const e = smooth(clamp(s.pres, 0, 1));
       s.root.position.set(s.side * (1 - e) * (this.viewW + 1.2), this.baseY, -(1 - e) * 1.2);
+      // the rail is far longer than the screen, so it travels its whole length and leaves with the clothes
+      if (s.rail) s.rail.position.x = s.side * (1 - e) * RAIL_LEN;
 
       const prev = s.p;
       if (!(on && this.drag)) s.p = damp(s.p, s.target, 8.5, dt);
@@ -423,4 +427,5 @@ export class Engine {
 
 const RING_R = 2.5;
 const RAIL_Y = 1.18;
+const RAIL_LEN = 18;
 const RING_Y = 1.36;
