@@ -188,6 +188,7 @@ button:focus-visible {
 /* ---------- dock: everything the thumb needs ---------- */
 
 .dock {
+  touch-action: none;
   position: absolute;
   left: 0;
   right: 0;
@@ -300,6 +301,7 @@ button:focus-visible {
   max-height: 30vh;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   scrollbar-width: none;
   font-size: 14px;
   line-height: 1.45;
@@ -576,112 +578,205 @@ button:focus-visible {
 .scrim {
   position: absolute;
   inset: 0;
-  background: rgba(42, 36, 34, 0.25);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  z-index: 6;
+  background: rgba(42, 36, 34, 0.18);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  animation: fade 0.2s both;
+  animation: fade 0.25s both;
+  touch-action: none;
+}
+.scrim.out {
+  animation: fade 0.3s reverse both;
 }
 @keyframes fade {
   from {
     opacity: 0;
   }
 }
+/* the cart is the same frosted panel as the dock, so the two read as one family */
 .cart {
-  width: 100%;
-  max-width: 520px;
-  max-height: 78vh;
-  overflow: auto;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
-  color: var(--ink);
-  border-radius: 36px 36px 0 0;
-  padding: 22px 18px calc(env(safe-area-inset-bottom) + 22px);
-  animation: rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  width: calc(100% - 20px);
+  max-width: 500px;
+  box-sizing: border-box;
+  max-height: 82vh;
+  margin-bottom: calc(env(safe-area-inset-bottom) + 10px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(247, 244, 239, 0.93);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  border: 1px solid var(--edge);
+  border-radius: 36px;
+  box-shadow: 0 24px 60px -30px rgba(42, 36, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  padding: 6px 16px 20px;
+  animation: rise 0.5s var(--spring) both;
+  transition: transform 0.45s var(--spring);
+}
+.scrim.out .cart {
+  animation: sink 0.3s cubic-bezier(0.5, 0, 0.8, 0.4) both;
 }
 @keyframes rise {
   from {
-    transform: translateY(100%);
+    transform: translateY(105%);
   }
+}
+@keyframes sink {
+  to {
+    transform: translateY(110%);
+  }
+}
+.grab {
+  align-self: center;
+  border: 0;
+  background: none;
+  padding: 10px 30px;
+}
+.grab i {
+  display: block;
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+  opacity: 0.35;
 }
 .carthead {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .carthead h2 {
-  font-family: var(--display);
   font-weight: 500;
-  font-size: 24px;
+  font-size: 28px;
   letter-spacing: -0.03em;
   margin: 0;
-}
-.carthead button,
-.cart li button {
-  background: none;
-  border: 0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  font-size: 14px;
-  padding: 10px 0 10px 10px;
-}
-.cart button:focus-visible {
-  outline-color: var(--ink);
 }
 .cart ul {
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  display: grid;
+  gap: 8px;
 }
 .cart li {
   display: grid;
-  grid-template-columns: 36px 1fr auto auto;
+  grid-template-columns: 58px 1fr auto;
   gap: 12px;
   align-items: center;
-  padding: 10px 0;
-  border-top: 1px solid rgba(42, 36, 34, 0.12);
+  padding: 8px 8px 8px 8px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--edge);
+  transition: transform 0.4s var(--spring), opacity 0.25s;
+  animation: info 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-.cart li i {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgba(42, 36, 34, 0.06) center / contain no-repeat;
+.cart li.gone {
+  transition: transform 0.26s ease-in, opacity 0.26s;
+  opacity: 0 !important;
 }
-.cart li div {
+.cart li > i {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: rgba(42, 36, 34, 0.06) center / 78% no-repeat;
+}
+.cart li > div:first-of-type {
   display: grid;
-  gap: 2px;
+  gap: 6px;
+  min-width: 0;
+}
+.cart li b {
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cart li span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
-  opacity: 0.65;
+  opacity: 0.7;
 }
-.cart li em {
-  font-style: normal;
-  font-size: 14px;
-  white-space: nowrap;
+.qty {
+  display: flex;
+  align-items: center;
+  border-radius: 20px;
+  background: var(--ink);
+  color: #fff;
+}
+.qty button {
+  width: 38px;
+  height: 40px;
+  border: 0;
+  background: none;
+  display: grid;
+  place-items: center;
+  transition: transform 0.35s var(--spring);
+}
+.qty button:active {
+  transform: scale(0.8);
+}
+.qty button:focus-visible {
+  outline-color: var(--lime);
+  outline-offset: -4px;
+}
+.qty svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.qty span {
+  min-width: 18px;
+  justify-content: center;
+  color: var(--lime);
+  opacity: 1;
+}
+.tip {
+  margin: 10px 4px 0;
+  font-size: 12px;
+  opacity: 0.5;
 }
 .sum {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  border-top: 1px solid var(--ink);
-  padding-top: 14px;
-  margin-top: 4px;
+  align-items: flex-end;
+  margin-top: 16px;
+  padding: 16px 4px 0;
+  border-top: 1px solid rgba(42, 36, 34, 0.14);
+}
+.sum > span {
+  opacity: 0.6;
 }
 .sum strong {
-  font-weight: 600;
-  font-size: 20px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  font-weight: 500;
+}
+.sum small {
+  font-size: 14px;
+  opacity: 0.6;
+  line-height: 1;
 }
 .empty,
 .soon {
   font-size: 14px;
-  opacity: 0.7;
+  opacity: 0.65;
   line-height: 1.5;
   max-width: 34ch;
+  margin: 10px 4px 0;
 }
 
 /* ---------- wide screens ---------- */
@@ -695,19 +790,11 @@ button:focus-visible {
     display: none;
   }
   .scrim {
-    align-items: stretch;
     justify-content: flex-end;
+    padding-right: 10px;
   }
   .cart {
-    max-height: none;
     max-width: 420px;
-    border-radius: 0;
-    animation-name: slide;
-  }
-  @keyframes slide {
-    from {
-      transform: translateX(100%);
-    }
   }
 }
 
@@ -736,6 +823,8 @@ button:focus-visible {
     animation: none;
   }
   .fly,
+  .cart,
+  .cart li,
   .dots circle.on {
     animation: none;
   }

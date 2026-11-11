@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Engine } from "@/lib/engine";
+import Cart, { type CartLine } from "./Cart";
 import Dots from "./Dots";
-import { CATEGORIES, formatPrice, type CategoryId, type Product } from "@/lib/products";
+import { CATEGORIES, formatPrice, type CategoryId } from "@/lib/products";
 
-type CartLine = { key: string; product: Product; size: string; qty: number };
 
 export default function Shop() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,6 +20,7 @@ export default function Shop() {
   const [fly, setFly] = useState<{ key: number; src: string; dx: number; dy: number } | null>(null);
   const cartRef = useRef<HTMLButtonElement>(null);
   const cartOpenRef = useRef(false);
+  const dockDrag = useRef<{ x: number; y: number; scroll: boolean } | null>(null);
   useEffect(() => {
     cartOpenRef.current = cartOpen;
   }, [cartOpen]);
@@ -32,7 +33,6 @@ export default function Shop() {
   const product = category.products[index];
   const size = product.sizes.length === 1 ? product.sizes[0] : sizes[product.id];
   const count = cart.reduce((n, l) => n + l.qty, 0);
-  const total = cart.reduce((n, l) => n + l.qty * l.product.price, 0);
 
   useEffect(() => {
     let engine: Engine | undefined;
@@ -42,6 +42,7 @@ export default function Shop() {
         if (dead || !canvasRef.current) return;
         engine = new Engine(canvasRef.current, {
           onOpen: () => setOpen(true),
+          onSwipe: (dir) => setOpen(dir === "up"),
           onIndex: (c, i) => {
             setIndexes((s) => ({ ...s, [c]: i }));
             setTouched(true);
@@ -130,7 +131,21 @@ export default function Shop() {
 
       {!touched && !open && <p className="swipe" aria-hidden="true">Листайте в сторону</p>}
 
-      <section className={"dock" + (open ? " open" : "") + (category.guide ? " guided" : "")}>
+      <section
+        className={"dock" + (open ? " open" : "") + (category.guide ? " guided" : "")}
+        onPointerDown={(e) => {
+          const sc = (e.target as HTMLElement).closest(".scroll");
+          dockDrag.current = { x: e.clientX, y: e.clientY, scroll: !!sc && sc.scrollHeight > sc.clientHeight };
+        }}
+        onPointerUp={(e) => {
+          // смахнуть панель вверх — открыть карточку, вниз — свернуть
+          const d = dockDrag.current;
+          dockDrag.current = null;
+          if (!d || d.scroll) return;
+          const dy = e.clientY - d.y;
+          if (Math.abs(dy) > 36 && Math.abs(dy) > Math.abs(e.clientX - d.x) * 1.3) setOpen(dy < 0);
+        }}
+      >
         <button className="more" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <i aria-hidden="true" />
           {open ? "Свернуть" : "Подробнее"}
@@ -254,42 +269,12 @@ export default function Shop() {
       )}
 
       {cartOpen && (
-        <div className="scrim" onClick={() => setCartOpen(false)}>
-          <aside className="cart" onClick={(e) => e.stopPropagation()} aria-label="Корзина">
-            <div className="carthead">
-              <h2>Корзина</h2>
-              <button onClick={() => setCartOpen(false)}>Закрыть</button>
-            </div>
-            {cart.length === 0 ? (
-              <p className="empty">Пока пусто. Выберите вещь на витрине и добавьте её сюда.</p>
-            ) : (
-              <>
-                <ul>
-                  {cart.map((l) => (
-                    <li key={l.key}>
-                      <i style={{ backgroundImage: `url(${l.product.image})` }} />
-                      <div>
-                        <b>{l.product.name}</b>
-                        <span>
-                          {l.size}, {l.qty} шт.
-                        </span>
-                      </div>
-                      <em>{formatPrice(l.product.price * l.qty)}</em>
-                      <button onClick={() => setCart((c) => c.filter((x) => x !== l))} aria-label={`Убрать ${l.product.name}`}>
-                        Убрать
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="sum">
-                  <span>Итого</span>
-                  <strong>{formatPrice(total)}</strong>
-                </div>
-                <p className="soon">Оформление заказа появится на следующем этапе.</p>
-              </>
-            )}
-          </aside>
-        </div>
+        <Cart
+          lines={cart}
+          onClose={() => setCartOpen(false)}
+          onRemove={(key) => setCart((c) => c.filter((l) => l.key !== key))}
+          onQty={(key, d) => setCart((c) => c.flatMap((l) => (l.key !== key ? [l] : l.qty + d > 0 ? [{ ...l, qty: l.qty + d }] : [])))}
+        />
       )}
     </main>
   );

@@ -31,7 +31,7 @@ type Stage = {
   rail?: THREE.Object3D;
 };
 
-type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void };
+type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void; onSwipe: (dir: "up" | "down") => void };
 
 const TAU = Math.PI * 2;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -52,7 +52,7 @@ export class Engine {
   private ptrSmooth = new THREE.Vector2(0, 0);
   private ray = new THREE.Raycaster();
   private hovered = -1;
-  private drag: { id: number; x0: number; p0: number; turn0: number; lastX: number; lastT: number; v: number; moved: number } | null = null;
+  private drag: { id: number; x0: number; y0: number; p0: number; turn0: number; lastX: number; lastT: number; v: number; moved: number } | null = null;
   private reduced = false;
   private ro: ResizeObserver;
   private disposed = false;
@@ -230,7 +230,7 @@ export class Engine {
     const s = this.stages.get(this.active)!;
     this.canvas.setPointerCapture(e.pointerId);
     const it = s.items[Math.round(s.target)];
-    this.drag = { id: e.pointerId, x0: e.clientX, p0: s.p, turn0: it?.turn ?? 0, lastX: e.clientX, lastT: e.timeStamp, v: 0, moved: 0 };
+    this.drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p0: s.p, turn0: it?.turn ?? 0, lastX: e.clientX, lastT: e.timeStamp, v: 0, moved: 0 };
   };
 
   private onMove = (e: PointerEvent) => {
@@ -266,6 +266,13 @@ export class Engine {
     if (!d || d.id !== e.pointerId) return;
     this.drag = null;
     const s = this.stages.get(this.active)!;
+    // a vertical swipe over the scene opens the product card (up) or folds it (down)
+    const dy = e.clientY - d.y0;
+    if (Math.abs(dy) > 44 && Math.abs(dy) > Math.abs(e.clientX - d.x0) * 1.4) {
+      if (!this.detail) s.target = clamp(Math.round(s.target), 0, s.items.length - 1);
+      this.cb.onSwipe(dy < 0 ? "up" : "down");
+      return;
+    }
     if (d.moved < 7) {
       const i = this.pick(e.clientX, e.clientY);
       if (i >= 0) {
