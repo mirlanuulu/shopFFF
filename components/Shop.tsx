@@ -4,31 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Engine } from "@/lib/engine";
 import Cart, { type CartLine } from "./Cart";
 import Dots from "./Dots";
-import { fx, setMuted } from "@/lib/feedback";
+import IntroLogo from "./IntroLogo";
+import {
+  fx,
+  introSound,
+  setMuted,
+  soundUnlocked,
+  stopIntroSound,
+} from "@/lib/feedback";
 import { CATEGORIES, formatPrice, type CategoryId } from "@/lib/products";
-
-/** Box of the letters themselves (cap height, ink width), not of the text line around them. */
-function glyphBox(el: HTMLElement) {
-  const r = el.getBoundingClientRect();
-  const cs = getComputedStyle(el);
-  const ctx = document.createElement("canvas").getContext("2d");
-  if (!ctx) return { x: r.left, y: r.top, w: r.width, h: r.height };
-  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  if ("letterSpacing" in ctx) ctx.letterSpacing = cs.letterSpacing;
-  const t = ctx.measureText(el.textContent ?? "");
-  // baseline sits where the line's ascent ends; the text box is centred in the line by line-height
-  const lh = parseFloat(cs.lineHeight) || r.height;
-  const baseline =
-    r.top +
-    (lh - (t.fontBoundingBoxAscent + t.fontBoundingBoxDescent)) / 2 +
-    t.fontBoundingBoxAscent;
-  return {
-    x: r.left - t.actualBoundingBoxLeft,
-    y: baseline - t.actualBoundingBoxAscent,
-    w: t.actualBoundingBoxLeft + t.actualBoundingBoxRight,
-    h: t.actualBoundingBoxAscent + t.actualBoundingBoxDescent,
-  };
-}
 
 export default function Shop() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,13 +52,13 @@ export default function Shop() {
   const [intro, setIntro] = useState<"pending" | "play" | "clear" | "off">(
     "pending",
   );
-  const [morph, setMorph] = useState<{
-    frost: React.CSSProperties;
-    logo: React.CSSProperties;
-  } | null>(null);
+  const [frost, setFrost] = useState<React.CSSProperties | undefined>();
+  // браузер не даёт играть звук до первого касания: тогда интро ждёт «Коснитесь, чтобы войти»
+  const [gate, setGate] = useState(false);
+  const [ready, setReady] = useState(false);
+  const introAt = useRef(0);
   const dockRef = useRef<HTMLElement>(null);
   const markRef = useRef<HTMLSpanElement>(null);
-  const logoRef = useRef<HTMLDivElement>(null);
 
   const category = useMemo(() => CATEGORIES.find((c) => c.id === cat)!, [cat]);
   const index = indexes[cat];
@@ -96,25 +80,16 @@ export default function Shop() {
         const options = {
           onIntro: (phase: "clear" | "done") => {
             if (phase === "done") return setIntro("off");
-            // стекло сжимается в нижнюю панель, логотип уезжает на своё место в шапке
+            // стекло сжимается в нижнюю панель, точки улетают в логотип в шапке
             const d = dockRef.current?.getBoundingClientRect();
-            const m = markRef.current ? glyphBox(markRef.current) : null;
-            const l = logoRef.current?.getBoundingClientRect();
-            if (d && m && l) {
-              setMorph({
-                frost: {
-                  top: d.top,
-                  left: d.left,
-                  width: d.width,
-                  height: d.height,
-                  borderRadius: 36,
-                },
-                logo: {
-                  transform: `translate(${m.x + m.w / 2 - (l.left + l.width / 2)}px, ${m.y + m.h / 2 - (l.top + l.height / 2)}px) scale(${m.w / l.width}, ${m.h / l.height})`,
-                  opacity: 0,
-                },
+            if (d)
+              setFrost({
+                top: d.top,
+                left: d.left,
+                width: d.width,
+                height: d.height,
+                borderRadius: 36,
               });
-            }
             setIntro("clear");
           },
           onOpen: () => setOpen(true),
@@ -127,6 +102,22 @@ export default function Shop() {
         };
         engine = new Engine(canvasRef.current, options, play);
         engineRef.current = engine;
+        if (play) {
+          introAt.current = performance.now();
+          // пока браузер решает про звук, интро стоит на месте
+          const e = engine;
+          e.holdIntro();
+          // ?gate в адресе показывает режим «Коснитесь, чтобы войти», как на телефоне
+          const forced = new URLSearchParams(location.search).has("gate");
+          void (forced ? Promise.resolve(false) : soundUnlocked()).then(
+            (ok) => {
+              if (dead) return;
+              if (!ok) return setGate(true);
+              const left = e.releaseIntro(0);
+              introSound(left.clear, left.arrive, true);
+            },
+          );
+        }
       })
       .catch(() => {
         setWebgl(false);
@@ -163,6 +154,31 @@ export default function Shop() {
     if (!quiet.current) fx(cartOpen ? "open" : "close");
     quiet.current = false;
   }, [cartOpen]);
+
+  // если на «Коснитесь, чтобы войти» так и не нажали, интро идёт дальше без звука
+  useEffect(() => {
+    if (!gate || !ready) return;
+    const id = setTimeout(() => {
+      engineRef.current?.releaseIntro(1);
+      setGate(false);
+    }, 4500);
+    return () => clearTimeout(id);
+  }, [gate, ready]);
+
+  const introTap = () => {
+    const e = engineRef.current;
+    if (!e) return;
+    if (gate) {
+      // это касание и разблокирует звук: интро продолжается уже с ним
+      const elapsed = (performance.now() - introAt.current) / 1000;
+      const left = e.releaseIntro(Math.min(elapsed, 1));
+      introSound(left.clear, left.arrive, elapsed < 1.2);
+      setGate(false);
+    } else {
+      stopIntroSound();
+      e.skipIntro();
+    }
+  };
 
   const pickSize = (s: string) => {
     setSizes((v) => ({ ...v, [product.id]: s }));
@@ -464,16 +480,18 @@ export default function Shop() {
       </section>
 
       {(intro === "play" || intro === "clear") && (
-        <div
-          className="intro"
-          onPointerDown={() => engineRef.current?.skipIntro()}
-        >
-          <div className="frost" style={morph?.frost} />
-          <div className="logo" ref={logoRef} style={morph?.logo}>
-            <Dots text="FFF" height={84} gather />
-          </div>
-          {intro === "play" && (
+        <div className="intro" onPointerDown={introTap}>
+          <div className="frost" style={frost} />
+          <IntroLogo
+            mark={markRef}
+            landing={intro === "clear"}
+            onReady={() => setReady(true)}
+          />
+          {intro === "play" && !gate && (
             <p className="skip">Коснитесь, чтобы пропустить</p>
+          )}
+          {intro === "play" && gate && ready && (
+            <p className="skip enter">Коснитесь, чтобы войти</p>
           )}
         </div>
       )}

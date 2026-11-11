@@ -66,6 +66,7 @@ export class Engine {
   private dist = 9;
   private introT = -1; // seconds into the intro, -1 when it is not playing
   private introSpeed = 1;
+  private introHold = false;
   private introPhase = 0;
   private depot: THREE.Group | null = null;
 
@@ -199,18 +200,36 @@ export class Engine {
   }
 
   skipIntro() {
-    if (this.introT >= 0) this.introSpeed = 7;
+    if (this.introT < 0) return;
+    this.introHold = false;
+    this.introSpeed = 7;
+  }
+
+  /** Keep the intro behind the glass (conveyors running) until the visitor taps in. */
+  holdIntro() {
+    if (this.introT >= 0) this.introHold = true;
+  }
+
+  /** Let the intro go on from second `at`; returns how long until the glass clears and the camera arrives. */
+  releaseIntro(at: number) {
+    this.introHold = false;
+    this.introT = Math.max(this.introT, at);
+    return this.introLeft();
+  }
+
+  introLeft() {
+    return { clear: Math.max(0, INTRO_CLEAR - this.introT), arrive: Math.max(0, INTRO_FLY - this.introT) };
   }
 
   private stepIntro(dt: number, t: number) {
-    this.introT += dt * this.introSpeed;
+    if (!this.introHold) this.introT += dt * this.introSpeed;
     const T = this.introT;
     const e = smooth(clamp(T / INTRO_FLY, 0, 1));
     const fly = 1 - e;
     // wide lens and speed at the start, the showroom's own lens and stillness at the end
     this.camera.fov = FOV + 40 * fly;
-    this.camera.position.set(Math.sin(T * 1.7) * 0.12 * fly, 0.9 * fly, this.dist + AISLE * fly);
-    this.camera.rotation.set(-0.05 * fly, 0, Math.sin(T * 1.3) * 0.035 * fly);
+    this.camera.position.set(Math.sin(t * 1.7) * 0.12 * fly, 0.9 * fly, this.dist + AISLE * fly);
+    this.camera.rotation.set(-0.05 * fly, 0, Math.sin(t * 1.3) * 0.035 * fly);
     this.camera.updateProjectionMatrix();
     const fog = this.scene.fog as THREE.Fog;
     fog.far = 16 + 120 * e * e;
@@ -583,8 +602,8 @@ const RAIL_Y = 1.18;
 const RAIL_LEN = 18;
 const FOV = 32;
 const AISLE = 17; // length of the intro flight
-const INTRO_FLY = 3.3; // seconds until the camera stops
-const INTRO_CLEAR = 1.4; // when the frosted glass starts to clear
-const INTRO_RIDE = 2.0; // when the first rail rides in
+const INTRO_FLY = 3.8; // seconds until the camera stops
+const INTRO_CLEAR = 1.9; // when the frosted glass starts to clear
+const INTRO_RIDE = 2.5; // when the first rail rides in
 const INTRO_BLUR = 16;
 const RING_Y = 1.36;
