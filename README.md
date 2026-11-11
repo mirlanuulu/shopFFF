@@ -1,0 +1,11 @@
+# FFF — 3D-витрина магазина одежды
+
+Черновик пользовательской части. Next.js + three.js.
+
+- `lib/products.ts` — каталог (пока тестовый)
+- `lib/builders.ts` — 3D-модели вещей, собранные кодом
+- `lib/engine.ts` — сцена, жесты, четыре раскладки категорий
+- `components/Shop.tsx` — интерфейс
+- `public/bg.mp4` — фоновое видео
+
+Модель кроссовка: «Materials Variants Shoe», Shopify / Khronos glTF Sample Assets, CC BY 4.0.
