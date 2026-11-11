@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CATEGORIES, type CategoryId, type Product } from "./products";
 import { buildProduct, chrome, RAIL_R } from "./builders";
+import { INTRO_CLEAR, INTRO_FLY, INTRO_RIDE } from "./intro";
 
 type Item = {
   group: THREE.Group; // placed by the layout
@@ -31,12 +32,18 @@ type Stage = {
   rail?: THREE.Object3D;
 };
 
-type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void; onSwipe: (dir: "up" | "down") => void; onIntro: (phase: "clear" | "done") => void };
+type Callbacks = {
+  onIndex: (cat: CategoryId, i: number) => void;
+  onOpen: () => void;
+  onSwipe: (dir: "up" | "down") => void;
+  onIntro: (phase: "clear" | "done") => void;
+};
 
 const TAU = Math.PI * 2;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const smooth = (t: number) => t * t * (3 - 2 * t);
-const damp = (cur: number, to: number, rate: number, dt: number) => cur + (to - cur) * (1 - Math.exp(-rate * dt));
+const damp = (cur: number, to: number, rate: number, dt: number) =>
+  cur + (to - cur) * (1 - Math.exp(-rate * dt));
 
 export class Engine {
   private renderer: THREE.WebGLRenderer;
@@ -52,7 +59,17 @@ export class Engine {
   private ptrSmooth = new THREE.Vector2(0, 0);
   private ray = new THREE.Raycaster();
   private hovered = -1;
-  private drag: { id: number; x0: number; y0: number; p0: number; turn0: number; lastX: number; lastT: number; v: number; moved: number } | null = null;
+  private drag: {
+    id: number;
+    x0: number;
+    y0: number;
+    p0: number;
+    turn0: number;
+    lastX: number;
+    lastT: number;
+    v: number;
+    moved: number;
+  } | null = null;
   private reduced = false;
   private ro: ResizeObserver;
   private disposed = false;
@@ -65,21 +82,40 @@ export class Engine {
   private blur = -1;
   private dist = 9;
   private introT = -1; // seconds into the intro, -1 when it is not playing
-  private introSpeed = 1;
   private introHold = false;
+  private introStart = 0; // seconds on the page clock when the visitor tapped in
   private introPhase = 0;
   private depot: THREE.Group | null = null;
 
-  constructor(private canvas: HTMLCanvasElement, private cb: Callbacks, intro = false) {
-    this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2));
+  constructor(
+    private canvas: HTMLCanvasElement,
+    private cb: Callbacks,
+    intro = false,
+  ) {
+    this.reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+    this.renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio,
+        window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2,
+      ),
+    );
     THREE.DefaultLoadingManager.onLoad = () => (this.awake = 30);
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = pmrem.fromScene(
+      new RoomEnvironment(),
+      0.04,
+    ).texture;
     this.scene.environmentIntensity = 0.75;
     pmrem.dispose();
 
@@ -115,18 +151,37 @@ export class Engine {
       group.add(inner);
       root.add(group);
       group.traverse((o) => (o.userData.item = i));
-      return { group, inner, product, swing: 0, swingV: 0, hover: 0, spinT: 1, seed: i * 1.7 + 0.3, size: 1, sizeV: 0, sizeTo: 1, turn: 0 };
+      return {
+        group,
+        inner,
+        product,
+        swing: 0,
+        swingV: 0,
+        hover: 0,
+        spinT: 1,
+        seed: i * 1.7 + 0.3,
+        size: 1,
+        sizeV: 0,
+        sizeTo: 1,
+        turn: 0,
+      };
     });
 
     if (id === "tops") {
-      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, RAIL_LEN, 16), chrome());
+      const rail = new THREE.Mesh(
+        new THREE.CylinderGeometry(RAIL_R, RAIL_R, RAIL_LEN, 16),
+        chrome(),
+      );
       rail.rotation.z = Math.PI / 2;
       rail.position.y = RAIL_Y;
       rail.name = "rail";
       root.add(rail);
     }
     if (id === "bottoms") {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, RAIL_R, 12, 120), chrome());
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(RING_R, RAIL_R, 12, 120),
+        chrome(),
+      );
       ring.rotation.x = Math.PI / 2;
       ring.position.set(0, RING_Y, -RING_R);
       root.add(ring);
@@ -135,12 +190,18 @@ export class Engine {
       for (const it of items) {
         const disc = new THREE.Mesh(
           new THREE.CylinderGeometry(0.62, 0.62, 0.03, 64),
-          new THREE.MeshPhysicalMaterial({ color: "#ffffff", metalness: 0, roughness: 0.3, transparent: true, opacity: 0.55 })
+          new THREE.MeshPhysicalMaterial({
+            color: "#ffffff",
+            metalness: 0,
+            roughness: 0.3,
+            transparent: true,
+            opacity: 0.55,
+          }),
         );
         disc.position.y = -0.62;
         const halo = new THREE.Mesh(
           new THREE.TorusGeometry(0.64, 0.012, 8, 80),
-          new THREE.MeshBasicMaterial({ color: "#2a2422", transparent: true })
+          new THREE.MeshBasicMaterial({ color: "#2a2422", transparent: true }),
         );
         halo.rotation.x = Math.PI / 2;
         halo.position.y = -0.6;
@@ -149,13 +210,23 @@ export class Engine {
       }
     }
     this.scene.add(root);
-    this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0, side: 0, rail: root.getObjectByName("rail") });
+    this.stages.set(id, {
+      id,
+      root,
+      items,
+      p: 0,
+      target: 0,
+      pres: 0,
+      side: 0,
+      rail: root.getObjectByName("rail"),
+    });
   }
 
   /* ---------- intro: a flight down the warehouse aisle to the showroom ---------- */
 
   private startIntro() {
     this.introT = 0;
+    this.introHold = true; // waits behind the glass, conveyors running, until the entry screen is tapped
     this.stages.get("tops")!.side = 1; // the first rail rides in from the right at the end
     this.scene.fog = new THREE.Fog("#e9e2d6", 3, 16);
     this.canvas.style.filter = `blur(${INTRO_BLUR}px)`;
@@ -167,8 +238,16 @@ export class Engine {
     const metal = chrome();
     const stemGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.3, 6);
     let n = 0;
-    for (const [x, y, step] of [[-1.25, 2.1, 1.25], [1.25, 2.1, 1.25], [-2.7, 3.9, 1.6], [2.7, 3.9, 1.6]] as const) {
-      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, AISLE + 6, 10), metal);
+    for (const [x, y, step] of [
+      [-1.25, 2.1, 1.25],
+      [1.25, 2.1, 1.25],
+      [-2.7, 3.9, 1.6],
+      [2.7, 3.9, 1.6],
+    ] as const) {
+      const rail = new THREE.Mesh(
+        new THREE.CylinderGeometry(RAIL_R, RAIL_R, AISLE + 6, 10),
+        metal,
+      );
       rail.rotation.x = Math.PI / 2;
       rail.position.set(x, y, AISLE / 2);
       depot.add(rail);
@@ -187,7 +266,12 @@ export class Engine {
           const img = tex.image as { width: number; height: number };
           const m = new THREE.Mesh(
             new THREE.PlaneGeometry((h * img.width) / img.height, h),
-            new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 })
+            new THREE.MeshStandardMaterial({
+              map: tex,
+              alphaTest: 0.5,
+              side: THREE.DoubleSide,
+              roughness: 0.9,
+            }),
           );
           m.position.y = -0.28 - h / 2;
           hang.add(m);
@@ -199,36 +283,25 @@ export class Engine {
     this.scene.add(depot);
   }
 
-  skipIntro() {
-    if (this.introT < 0) return;
-    this.introHold = false;
-    this.introSpeed = 7;
-  }
-
-  /** Keep the intro behind the glass (conveyors running) until the visitor taps in. */
-  holdIntro() {
-    if (this.introT >= 0) this.introHold = true;
-  }
-
-  /** Let the intro go on from second `at`; returns how long until the glass clears and the camera arrives. */
+  /** The visitor tapped the entry screen: the intro runs from `at` (performance.now() milliseconds). */
   releaseIntro(at: number) {
     this.introHold = false;
-    this.introT = Math.max(this.introT, at);
-    return this.introLeft();
-  }
-
-  introLeft() {
-    return { clear: Math.max(0, INTRO_CLEAR - this.introT), arrive: Math.max(0, INTRO_FLY - this.introT) };
+    this.introStart = at / 1000;
   }
 
   private stepIntro(dt: number, t: number) {
-    if (!this.introHold) this.introT += dt * this.introSpeed;
+    // the page clock, not summed frame steps: on a slow phone the camera still keeps time with the music
+    if (!this.introHold) this.introT = Math.max(0, t - this.introStart);
     const T = this.introT;
     const e = smooth(clamp(T / INTRO_FLY, 0, 1));
     const fly = 1 - e;
     // wide lens and speed at the start, the showroom's own lens and stillness at the end
     this.camera.fov = FOV + 40 * fly;
-    this.camera.position.set(Math.sin(t * 1.7) * 0.12 * fly, 0.9 * fly, this.dist + AISLE * fly);
+    this.camera.position.set(
+      Math.sin(t * 1.7) * 0.12 * fly,
+      0.9 * fly,
+      this.dist + AISLE * fly,
+    );
     this.camera.rotation.set(-0.05 * fly, 0, Math.sin(t * 1.3) * 0.035 * fly);
     this.camera.updateProjectionMatrix();
     const fog = this.scene.fog as THREE.Fog;
@@ -243,7 +316,8 @@ export class Engine {
       }
     }
     const k = 1 - smooth(clamp((T - INTRO_CLEAR) / 1.0, 0, 1));
-    this.canvas.style.filter = k > 0.01 ? `blur(${(k * INTRO_BLUR).toFixed(1)}px)` : "";
+    this.canvas.style.filter =
+      k > 0.01 ? `blur(${(k * INTRO_BLUR).toFixed(1)}px)` : "";
     if (this.introPhase === 0 && T >= INTRO_CLEAR) {
       this.introPhase = 1;
       this.cb.onIntro("clear");
@@ -290,7 +364,10 @@ export class Engine {
   /** Product card: the thing moves up, its neighbours step aside, dragging turns it. */
   setDetail(open: boolean) {
     this.detail = open;
-    if (!open) for (const s of this.stages.values()) for (const it of s.items) it.turn = ((((it.turn + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+    if (!open)
+      for (const s of this.stages.values())
+        for (const it of s.items)
+          it.turn = ((((it.turn + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
   }
 
   spin() {
@@ -337,9 +414,15 @@ export class Engine {
 
   private pick(clientX: number, clientY: number) {
     const r = this.canvas.getBoundingClientRect();
-    const v = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    const v = new THREE.Vector2(
+      ((clientX - r.left) / r.width) * 2 - 1,
+      -((clientY - r.top) / r.height) * 2 + 1,
+    );
     this.ray.setFromCamera(v, this.camera);
-    const hit = this.ray.intersectObject(this.stages.get(this.active)!.root, true)[0];
+    const hit = this.ray.intersectObject(
+      this.stages.get(this.active)!.root,
+      true,
+    )[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
     while (o && typeof o.userData.item !== "number") o = o.parent;
     return o ? (o.userData.item as number) : -1;
@@ -349,12 +432,25 @@ export class Engine {
     const s = this.stages.get(this.active)!;
     this.canvas.setPointerCapture(e.pointerId);
     const it = s.items[Math.round(s.target)];
-    this.drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p0: s.p, turn0: it?.turn ?? 0, lastX: e.clientX, lastT: e.timeStamp, v: 0, moved: 0 };
+    this.drag = {
+      id: e.pointerId,
+      x0: e.clientX,
+      y0: e.clientY,
+      p0: s.p,
+      turn0: it?.turn ?? 0,
+      lastX: e.clientX,
+      lastT: e.timeStamp,
+      v: 0,
+      moved: 0,
+    };
   };
 
   private onMove = (e: PointerEvent) => {
     const r = this.canvas.getBoundingClientRect();
-    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1));
+    this.pointer.set(
+      ((e.clientX - r.left) / r.width) * 2 - 1,
+      -(((e.clientY - r.top) / r.height) * 2 - 1),
+    );
     const d = this.drag;
     if (d && d.id === e.pointerId) {
       const s = this.stages.get(this.active)!;
@@ -371,7 +467,9 @@ export class Engine {
       if (p > max) p = max + (p - max) * 0.35;
       s.p = p;
       const dt = Math.max(1, e.timeStamp - d.lastT);
-      d.v = d.v * 0.6 + ((-(e.clientX - d.lastX) / this.pxPerItem()) / dt) * 1000 * 0.4;
+      d.v =
+        d.v * 0.6 +
+        (-(e.clientX - d.lastX) / this.pxPerItem() / dt) * 1000 * 0.4;
       d.lastX = e.clientX;
       d.lastT = e.timeStamp;
     } else if (e.pointerType === "mouse") {
@@ -388,7 +486,8 @@ export class Engine {
     // a vertical swipe over the scene opens the product card (up) or folds it (down)
     const dy = e.clientY - d.y0;
     if (Math.abs(dy) > 44 && Math.abs(dy) > Math.abs(e.clientX - d.x0) * 1.4) {
-      if (!this.detail) s.target = clamp(Math.round(s.target), 0, s.items.length - 1);
+      if (!this.detail)
+        s.target = clamp(Math.round(s.target), 0, s.items.length - 1);
       this.cb.onSwipe(dy < 0 ? "up" : "down");
       return;
     }
@@ -472,7 +571,8 @@ export class Engine {
 
     const dmTo = this.detail ? 1 : 0;
     this.energy += Math.abs(dmTo - this.dm);
-    this.dm = Math.abs(dmTo - this.dm) < 0.001 ? dmTo : damp(this.dm, dmTo, 7, dt);
+    this.dm =
+      Math.abs(dmTo - this.dm) < 0.001 ? dmTo : damp(this.dm, dmTo, 7, dt);
 
     const intro = this.introT >= 0;
     if (intro) this.stepIntro(dt, t);
@@ -487,7 +587,11 @@ export class Engine {
       const e = smooth(clamp(s.pres, 0, 1));
       // far enough that the ring and the neighbouring clothes are off screen before the stage is switched off
       const dm = on ? this.dm : 0;
-      s.root.position.set(s.side * (1 - e) * (this.viewW / 2 + 5.5), this.baseY + (this.viewH * 0.285 - this.baseY) * dm, -(1 - e) * 1.2);
+      s.root.position.set(
+        s.side * (1 - e) * (this.viewW / 2 + 5.5),
+        this.baseY + (this.viewH * 0.285 - this.baseY) * dm,
+        -(1 - e) * 1.2,
+      );
       s.root.scale.setScalar(1 - 0.4 * dm);
       // the rail is far longer than the screen, so it travels its whole length and leaves with the clothes
       if (s.rail) s.rail.position.x = s.side * (1 - e) * RAIL_LEN;
@@ -509,9 +613,12 @@ export class Engine {
     }
 
     // tops and bottoms are still when nobody touches them, so there is nothing to redraw
-    const drifting = !this.reduced && (this.active === "shoes" || this.active === "accessories");
+    const drifting =
+      !this.reduced &&
+      (this.active === "shoes" || this.active === "accessories");
     if (this.awake > 0) this.awake--;
-    if (this.energy > 0.002 || this.drag || drifting || intro || this.awake > 0) this.renderer.render(this.scene, this.camera);
+    if (this.energy > 0.002 || this.drag || drifting || intro || this.awake > 0)
+      this.renderer.render(this.scene, this.camera);
   };
 
   private layout(s: Stage, vel: number, dt: number, t: number, on: boolean) {
@@ -529,8 +636,13 @@ export class Engine {
 
       it.sizeV += (-140 * (it.size - it.sizeTo) - 11 * it.sizeV) * dt;
       it.size += it.sizeV * dt;
-      this.energy += Math.abs(it.swing) + Math.abs(it.swingV) * 0.05 + Math.abs(it.sizeV) + Math.abs(it.size - it.sizeTo);
-      this.energy += Math.abs((on && this.hovered === i ? 1 : 0) - it.hover) * 0.2;
+      this.energy +=
+        Math.abs(it.swing) +
+        Math.abs(it.swingV) * 0.05 +
+        Math.abs(it.sizeV) +
+        Math.abs(it.size - it.sizeTo);
+      this.energy +=
+        Math.abs((on && this.hovered === i ? 1 : 0) - it.hover) * 0.2;
       if (it.spinT < 1) this.energy += 1;
       it.hook ??= it.inner.getObjectByName("hookPivot");
       it.mid ??= it.inner.getObjectByName("mid");
@@ -551,7 +663,11 @@ export class Engine {
         case "tops": {
           // straight rail: garments hang edge-on, the one in focus turns to the viewer
           g.position.set(d * 1.12, RAIL_Y, 0);
-          n.rotation.set(0, 1.28 * (1 - face) + look + spin, it.swing * 0.5 * calm);
+          n.rotation.set(
+            0,
+            1.28 * (1 - face) + look + spin,
+            it.swing * 0.5 * calm,
+          );
           g.scale.setScalar((0.92 + face * 0.1) * it.size);
           if (it.hook) it.hook.rotation.y = Math.PI / 2 - n.rotation.y; // stays across the rail
           g.visible = ad < 4;
@@ -560,8 +676,16 @@ export class Engine {
         case "bottoms": {
           // dry-cleaner carousel: a ring that carries trousers around to the front
           const a = d * 0.42;
-          g.position.set(Math.sin(a) * RING_R, RING_Y, Math.cos(a) * RING_R - RING_R);
-          n.rotation.set(0, a + 1.2 * (1 - face) + look + spin, it.swing * 0.45 * calm);
+          g.position.set(
+            Math.sin(a) * RING_R,
+            RING_Y,
+            Math.cos(a) * RING_R - RING_R,
+          );
+          n.rotation.set(
+            0,
+            a + 1.2 * (1 - face) + look + spin,
+            it.swing * 0.45 * calm,
+          );
           g.scale.setScalar((0.9 + face * 0.06) * it.size);
           if (it.hook) it.hook.rotation.y = a + Math.PI / 2 - n.rotation.y; // stays across the ring
           g.visible = Math.abs(a) < Math.PI * 0.9;
@@ -570,29 +694,45 @@ export class Engine {
         case "shoes": {
           // levitation: shoes rest in profile on a disc; in focus one lifts and turns its toe to you
           const bob = Math.sin(t * 1.3 + it.seed) * 0.05 * calm;
-          g.position.set(d * 1.3, -0.1 - Math.min(ad, 2) * 0.22, -Math.min(ad, 3) * 0.9);
+          g.position.set(
+            d * 1.3,
+            -0.1 - Math.min(ad, 2) * 0.22,
+            -Math.min(ad, 3) * 0.9,
+          );
           n.position.y = face * 0.34 + bob;
-          n.rotation.set(0, (1 - face) * 1.05 + look * 1.2 + spin, it.swing * 0.2);
+          n.rotation.set(
+            0,
+            (1 - face) * 1.05 + look * 1.2 + spin,
+            it.swing * 0.2,
+          );
           n.scale.setScalar((0.86 + face * 0.2) * it.size);
           const halo = g.getObjectByName("halo") as THREE.Mesh | undefined;
-          if (halo) (halo.material as THREE.MeshBasicMaterial).opacity = 0.15 + face * 0.85;
+          if (halo)
+            (halo.material as THREE.MeshBasicMaterial).opacity =
+              0.15 + face * 0.85;
           g.visible = ad < 4;
           break;
         }
         default: {
           // zero gravity: objects drift and tumble; in focus one steadies and faces you
           const free = (1 - face) * calm;
-          g.position.set(d * 1.2, Math.sin(d * 1.25) * 0.55 + Math.sin(t * 0.7 + it.seed) * 0.08 * calm, -Math.min(ad, 3) * 0.85 + face * 0.4);
+          g.position.set(
+            d * 1.2,
+            Math.sin(d * 1.25) * 0.55 +
+              Math.sin(t * 0.7 + it.seed) * 0.08 * calm,
+            -Math.min(ad, 3) * 0.85 + face * 0.4,
+          );
           n.rotation.set(
             free * Math.sin(t * 0.5 + it.seed) * 0.35,
             free * (t * 0.45 + it.seed * 2) + look * 1.3 + spin,
-            free * Math.sin(t * 0.35 + it.seed) * 0.5 + it.swing * 0.25
+            free * Math.sin(t * 0.35 + it.seed) * 0.5 + it.swing * 0.25,
           );
           g.scale.setScalar((0.72 + face * 0.42) * it.size);
           g.visible = ad < 4;
         }
       }
-      if (on && this.dm > 0 && !focused) g.position.x += Math.sign(d || 1) * this.dm * 5;
+      if (on && this.dm > 0 && !focused)
+        g.position.x += Math.sign(d || 1) * this.dm * 5;
     }
   }
 }
@@ -602,8 +742,5 @@ const RAIL_Y = 1.18;
 const RAIL_LEN = 18;
 const FOV = 32;
 const AISLE = 17; // length of the intro flight
-const INTRO_FLY = 3.8; // seconds until the camera stops
-const INTRO_CLEAR = 1.9; // when the frosted glass starts to clear
-const INTRO_RIDE = 2.5; // when the first rail rides in
 const INTRO_BLUR = 16;
 const RING_Y = 1.36;

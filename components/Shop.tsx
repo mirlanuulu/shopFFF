@@ -5,13 +5,8 @@ import type { Engine } from "@/lib/engine";
 import Cart, { type CartLine } from "./Cart";
 import Dots from "./Dots";
 import IntroLogo from "./IntroLogo";
-import {
-  fx,
-  introSound,
-  setMuted,
-  soundUnlocked,
-  stopIntroSound,
-} from "@/lib/feedback";
+import { fx, introSound, setMuted, unlockAudio } from "@/lib/feedback";
+import { INTRO_CLEAR, INTRO_FLY } from "@/lib/intro";
 import { CATEGORIES, formatPrice, type CategoryId } from "@/lib/products";
 
 export default function Shop() {
@@ -48,15 +43,12 @@ export default function Shop() {
   const [nudge, setNudge] = useState(false);
   const [touched, setTouched] = useState(false);
   const [webgl, setWebgl] = useState(true);
-  // pending: решаем, показывать ли интро; play: матовое стекло; clear: стекло оттаивает; off: обычная витрина
-  const [intro, setIntro] = useState<"pending" | "play" | "clear" | "off">(
-    "pending",
-  );
+  // pending: грузится сцена; entry: экран входа; play: интро идёт; clear: стекло оттаивает; off: обычная витрина
+  const [intro, setIntro] = useState<
+    "pending" | "entry" | "play" | "clear" | "off"
+  >("pending");
+  const [startAt, setStartAt] = useState<number | null>(null);
   const [frost, setFrost] = useState<React.CSSProperties | undefined>();
-  // браузер не даёт играть звук до первого касания: тогда интро ждёт «Коснитесь, чтобы войти»
-  const [gate, setGate] = useState(false);
-  const [ready, setReady] = useState(false);
-  const introAt = useRef(0);
   const dockRef = useRef<HTMLElement>(null);
   const markRef = useRef<HTMLSpanElement>(null);
 
@@ -76,7 +68,7 @@ export default function Shop() {
         // интро играет при каждом открытии сайта, кроме случая, когда в системе отключены анимации
         const play = !window.matchMedia("(prefers-reduced-motion: reduce)")
           .matches;
-        setIntro(play ? "play" : "off");
+        setIntro(play ? "entry" : "off");
         const options = {
           onIntro: (phase: "clear" | "done") => {
             if (phase === "done") return setIntro("off");
@@ -102,22 +94,6 @@ export default function Shop() {
         };
         engine = new Engine(canvasRef.current, options, play);
         engineRef.current = engine;
-        if (play) {
-          introAt.current = performance.now();
-          // пока браузер решает про звук, интро стоит на месте
-          const e = engine;
-          e.holdIntro();
-          // ?gate в адресе показывает режим «Коснитесь, чтобы войти», как на телефоне
-          const forced = new URLSearchParams(location.search).has("gate");
-          void (forced ? Promise.resolve(false) : soundUnlocked()).then(
-            (ok) => {
-              if (dead) return;
-              if (!ok) return setGate(true);
-              const left = e.releaseIntro(0);
-              introSound(left.clear, left.arrive, true);
-            },
-          );
-        }
       })
       .catch(() => {
         setWebgl(false);
@@ -155,29 +131,21 @@ export default function Shop() {
     quiet.current = false;
   }, [cartOpen]);
 
-  // если на «Коснитесь, чтобы войти» так и не нажали, интро идёт дальше без звука
-  useEffect(() => {
-    if (!gate || !ready) return;
-    const id = setTimeout(() => {
-      engineRef.current?.releaseIntro(1);
-      setGate(false);
-    }, 4500);
-    return () => clearTimeout(id);
-  }, [gate, ready]);
-
-  const introTap = () => {
+  // касание экрана входа: в этот же момент стартуют звук, камера и точки, дальше интро идёт само
+  const entering = useRef(false);
+  const enter = async () => {
     const e = engineRef.current;
-    if (!e) return;
-    if (gate) {
-      // это касание и разблокирует звук: интро продолжается уже с ним
-      const elapsed = (performance.now() - introAt.current) / 1000;
-      const left = e.releaseIntro(Math.min(elapsed, 1));
-      introSound(left.clear, left.arrive, elapsed < 1.2);
-      setGate(false);
-    } else {
-      stopIntroSound();
-      e.skipIntro();
-    }
+    if (intro !== "entry" || !e || entering.current) return;
+    entering.current = true;
+    try {
+      if (navigator.userActivation?.isActive) navigator.vibrate?.(12);
+    } catch {}
+    await unlockAudio();
+    const now = performance.now();
+    e.releaseIntro(now);
+    setStartAt(now);
+    introSound(INTRO_CLEAR, INTRO_FLY);
+    setIntro("play");
   };
 
   const pickSize = (s: string) => {
@@ -479,20 +447,35 @@ export default function Shop() {
         </nav>
       </section>
 
-      {(intro === "play" || intro === "clear") && (
-        <div className="intro" onPointerDown={introTap}>
+      {intro !== "off" && (
+        <div
+          className={
+            "intro" +
+            (intro === "entry" ? " ready" : "") +
+            (startAt !== null ? " started" : "")
+          }
+          onPointerDown={enter}
+          role={intro === "entry" ? "button" : undefined}
+          tabIndex={intro === "entry" ? 0 : -1}
+          aria-label="Войти в магазин"
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && enter()}
+        >
           <div className="frost" style={frost} />
           <IntroLogo
             mark={markRef}
+            startAt={startAt}
             landing={intro === "clear"}
-            onReady={() => setReady(true)}
           />
-          {intro === "play" && !gate && (
-            <p className="skip">Коснитесь, чтобы пропустить</p>
-          )}
-          {intro === "play" && gate && ready && (
-            <p className="skip enter">Коснитесь, чтобы войти</p>
-          )}
+          <div className="entry" aria-hidden="true">
+            <span>Коснитесь, чтобы войти</span>
+            <small>
+              <svg viewBox="0 0 24 24">
+                <path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z" />
+                <path d="M15.5 9a4.5 4.5 0 010 6M18 6.5a8 8 0 010 11" />
+              </svg>
+              Со звуком
+            </small>
+          </div>
         </div>
       )}
 

@@ -21,33 +21,32 @@ export function setMuted(v: boolean) {
 }
 
 function audio() {
-  ctx ??= new AudioContext();
-  if (ctx.state === "suspended") void ctx.resume();
+  if (!ctx) {
+    ctx = new AudioContext();
+    // no sound from a hidden or closed tab: whatever is still scheduled stops with the page
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopIntroSound();
+        void ctx?.suspend();
+      }
+    });
+    addEventListener("pagehide", () => {
+      stopIntroSound();
+      void ctx?.close();
+      ctx = null;
+    });
+  }
+  if (ctx.state === "suspended" && !document.hidden) void ctx.resume();
   return ctx;
 }
 
-/**
- * Может ли страница играть звук без касания. На телефонах при заходе — почти всегда нет.
- * Браузер решает это не сразу, поэтому ответ приходит через мгновение.
- */
-export async function soundUnlocked(): Promise<boolean> {
+/** Вызывать прямо из обработчика касания: браузер разрешает звук только в ответ на действие человека. */
+export async function unlockAudio() {
   try {
-    const nav = navigator as Navigator & {
-      getAutoplayPolicy?: (type: string) => string;
-    };
-    if (nav.getAutoplayPolicy)
-      return nav.getAutoplayPolicy("audiocontext") === "allowed";
-    ctx ??= new AudioContext();
-    const c = ctx;
-    if (c.state === "running") return true;
-    await new Promise((r) => {
-      c.addEventListener("statechange", r, { once: true });
-      setTimeout(r, 200);
-    });
-    return (c.state as AudioContextState) === "running";
-  } catch {
-    return false;
-  }
+    const c = audio();
+    if (c.state !== "running")
+      await Promise.race([c.resume(), new Promise((r) => setTimeout(r, 400))]);
+  } catch {}
 }
 
 const VIBRATION: Record<Fx, number | number[]> = {
@@ -207,8 +206,8 @@ function partial(
   o.stop(at + attack + decay + 0.05);
 }
 
-/** clear, arrive: секунды от этого момента до того, как оттает стекло и камера доедет; sparkle: искры под сбор точек */
-export function introSound(clear: number, arrive: number, sparkle: boolean) {
+/** Звук интро от этого момента: clear и arrive — секунды до того, как оттает стекло и доедет камера. */
+export function introSound(clear: number, arrive: number) {
   clearTimeout(introBuzz);
   introBuzz = window.setTimeout(() => {
     try {
@@ -276,7 +275,7 @@ export function introSound(clear: number, arrive: number, sparkle: boolean) {
     air.start(t0);
 
     // 3. tiny glints while the dots gather, denser as they arrive
-    if (sparkle) {
+    {
       for (let i = 0; i < 48; i++) {
         const at = t0 + Math.pow(Math.random(), 0.6) * Math.min(1.7, clear);
         partial(

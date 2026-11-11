@@ -26,15 +26,19 @@ export function glyphBox(el: HTMLElement) {
 }
 
 type Dot = {
-  tx: number; // where it lands
+  tx: number; // where it lands in the word
   ty: number;
   r: number;
-  sx: number; // where it starts, anywhere on screen
-  sy: number;
-  cx: number; // bend of its path, so the swarm swirls in
-  cy: number;
-  d: number; // delay
+  a0: number; // its place on the entry ring
+  rr: number;
+  w: number; // ring speed
+  bx: number; // how far out it is flung when the ring bursts
+  by: number;
+  d: number; // delay after the tap
   dur: number;
+  sx: number; // set at launch: where the flight starts
+  sy: number;
+  live: boolean;
 };
 
 const TAU = Math.PI * 2;
@@ -47,25 +51,26 @@ const inOutCubic = (u: number) =>
   u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 
 /**
- * The intro logo: about a thousand and a half fine dots that swirl in from the whole screen,
- * leave short trails, settle into FFF in the header's own typeface, and then fly onto the header mark.
+ * The intro's dots. Before the tap they orbit as a slow ring on the entry screen.
+ * On the tap (startAt) the ring bursts across the whole screen and the dots swirl into FFF,
+ * set in the header's own typeface; on landing they fly onto the header mark and fade into it.
  */
 export default function IntroLogo({
   mark,
+  startAt,
   landing,
-  onReady,
 }: {
   mark: React.RefObject<HTMLElement | null>;
+  startAt: number | null;
   landing: boolean;
-  onReady: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const start = useRef<number | null>(null);
   const landAt = useRef(-1);
-  const ready = useRef(onReady);
 
   useEffect(() => {
-    ready.current = onReady;
-  });
+    start.current = startAt;
+  }, [startAt]);
   useEffect(() => {
     if (landing && landAt.current < 0) landAt.current = performance.now();
   }, [landing]);
@@ -93,7 +98,7 @@ export default function IntroLogo({
       const ctx = cv.getContext("2d")!;
       ctx.scale(dpr, dpr);
 
-      // set the word in the header's typeface, sized to fill most of the screen width
+      // set the word in the header's typeface, sized to most of the screen width
       const spacing =
         (parseFloat(cs.letterSpacing) || 0) / parseFloat(cs.fontSize);
       const probe = document.createElement("canvas").getContext("2d")!;
@@ -124,11 +129,15 @@ export default function IntroLogo({
       );
       const alpha = oc.getImageData(0, 0, off.width, off.height).data;
 
-      // halftone sampling: offset rows, dot size follows how much of the letter is under it
-      const left = W / 2 - inkW / 2;
-      const top = H * 0.4 - inkH / 2;
+      const cx = W / 2;
+      const cy = H * 0.4;
+      const left = cx - inkW / 2;
+      const top = cy - inkH / 2;
+      const ring = Math.min(W, H) * 0.19;
+      const reach = Math.hypot(W, H) / 2;
       const step = Math.max(2.6, inkW / 100);
       const dots: Dot[] = [];
+      // halftone sampling: offset rows, dot size follows how much of the letter is under it
       for (let j = 0, y = 0; y <= inkH; j++, y = j * step * 0.866) {
         for (let x = j % 2 ? step / 2 : 0; x <= inkW; x += step) {
           const a =
@@ -136,37 +145,54 @@ export default function IntroLogo({
               (Math.round(pad + y) * off.width + Math.round(pad + x)) * 4 + 3
             ];
           if (a < 50) continue;
-          const tx = left + x;
-          const ty = top + y;
-          const sx = -0.1 * W + Math.random() * 1.2 * W;
-          const sy = -0.1 * H + Math.random() * 1.2 * H;
-          const bend = 0.25 + Math.random() * 0.35;
+          // thicker in the middle of the band, thinning out to both edges
+          const band =
+            (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
+          const rr = ring * (1 + band * 0.62);
+          const out = reach * (0.55 + Math.random() * 0.6);
+          const ang = Math.random() * TAU;
           dots.push({
-            tx,
-            ty,
+            tx: left + x,
+            ty: top + y,
             r: step * 0.36 * (0.45 + (0.55 * a) / 255),
-            sx,
-            sy,
-            cx: (sx + tx) / 2 - (ty - sy) * bend,
-            cy: (sy + ty) / 2 + (tx - sx) * bend,
+            a0: Math.random() * TAU,
+            rr,
+            w: (0.5 * ring) / rr, // inner dots turn faster, like a small galaxy
+            bx: cx + Math.cos(ang) * out,
+            by: cy + Math.sin(ang) * out,
             d: (x / inkW) * 0.3 + Math.random() * 0.25,
-            dur: 0.8 + Math.random() * 0.4,
+            dur: 0.85 + Math.random() * 0.4,
+            sx: 0,
+            sy: 0,
+            live: false,
           });
         }
       }
-      const settle = Math.max(...dots.map((p) => p.d + p.dur));
       const t0 = performance.now();
-      let told = false;
       let land: ReturnType<typeof glyphBox> | null = null;
       const paths = Array.from({ length: 8 }, () => new Path2D());
+
+      const onRing = (p: Dot, t: number) => {
+        const a = p.a0 + p.w * t;
+        const r = p.rr * (1 + 0.035 * Math.sin(t * 1.4 + p.a0 * 3));
+        return [cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.96] as const;
+      };
 
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
         const t = (now - t0) / 1000;
-        // fade the previous frame instead of wiping it: moving dots leave short trails
+        const s0 = start.current;
+        const ts = s0 === null ? -1 : (now - s0) / 1000; // seconds since the tap
         const lt = landAt.current >= 0 ? (now - landAt.current) / 1000 : -1;
+
+        // fade the last frame instead of wiping it: moving dots leave short trails
         ctx.globalCompositeOperation = "destination-out";
-        ctx.fillStyle = lt >= 0 ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.38)"; // shorter trails on the flight to the header
+        ctx.fillStyle =
+          ts < 0
+            ? "rgba(0,0,0,0.5)"
+            : lt >= 0
+              ? "rgba(0,0,0,0.6)"
+              : "rgba(0,0,0,0.34)";
         ctx.fillRect(0, 0, W, H);
         ctx.globalCompositeOperation = "source-over";
 
@@ -178,28 +204,43 @@ export default function IntroLogo({
           ctx.clearRect(0, 0, W, H);
           return;
         }
-        // a sheen sweeps across the word once it has formed, and again every few seconds
-        const sweep = t > settle - 0.2 ? ((t - settle + 0.2) % 2.6) / 0.9 : -1;
-        const band = left - 60 + sweep * (inkW + 120);
+        const appear = clamp01(t / 0.9); // the ring fades in when the page opens
+        const sweep = ts > 1.55 ? (ts - 1.55) / 0.9 : -1; // a light sheen once the word has formed
+        const bandX = left - 60 + sweep * (inkW + 120);
         const scale = land ? 1 + (land.w / inkW - 1) * le : 1;
 
         for (let i = 0; i < 8; i++) paths[i] = new Path2D();
         for (const p of dots) {
-          const u = clamp01((t - p.d) / p.dur);
-          if (u <= 0) continue;
-          const e = outQuart(u);
-          const k = 1 - e;
-          let x = k * k * p.sx + 2 * k * e * p.cx + e * e * p.tx;
-          let y = k * k * p.sy + 2 * k * e * p.cy + e * e * p.ty;
-          let r = p.r * (0.3 + 0.7 * outBack(u));
-          if (sweep >= 0 && sweep <= 1)
-            r *= 1 - 0.4 * Math.exp(-Math.pow((p.tx - band) / 46, 2)); // dots thin out: a light sheen passes
+          let x: number;
+          let y: number;
+          let r: number;
+          let a: number;
+          const u = ts < 0 ? 0 : clamp01((ts - p.d) / p.dur);
+          if (u <= 0) {
+            [x, y] = onRing(p, t);
+            r = p.r * 0.75;
+            a = 0.8 * appear;
+          } else {
+            if (!p.live) {
+              [p.sx, p.sy] = onRing(p, t);
+              p.live = true;
+            }
+            // flung out toward the edge of the screen, then pulled into its place in the word
+            const e = outQuart(u);
+            const k = 1 - e;
+            x = k * k * p.sx + 2 * k * e * p.bx + e * e * p.tx;
+            y = k * k * p.sy + 2 * k * e * p.by + e * e * p.ty;
+            r = p.r * (0.75 + 0.25 * outBack(u));
+            a = 0.8 + 0.2 * u;
+            if (sweep >= 0 && sweep <= 1)
+              r *= 1 - 0.4 * Math.exp(-Math.pow((p.tx - bandX) / 46, 2));
+          }
           if (land) {
             x += (land.x + ((p.tx - left) / inkW) * land.w - x) * le;
             y += (land.y + ((p.ty - top) / inkH) * land.h - y) * le;
             r = Math.max(0.35, r * scale);
           }
-          const a = Math.min(1, u * 3) * fade;
+          a *= fade;
           const b = Math.min(7, Math.floor(a * 8));
           paths[b].moveTo(x + r, y);
           paths[b].arc(x, y, r, 0, TAU);
@@ -210,10 +251,6 @@ export default function IntroLogo({
           ctx.fill(paths[i]);
         }
         ctx.globalAlpha = 1;
-        if (!told && t >= settle) {
-          told = true;
-          ready.current();
-        }
       };
       raf = requestAnimationFrame(frame);
     })();
