@@ -7,6 +7,29 @@ import Dots from "./Dots";
 import { fx, setMuted } from "@/lib/feedback";
 import { CATEGORIES, formatPrice, type CategoryId } from "@/lib/products";
 
+/** Box of the letters themselves (cap height, ink width), not of the text line around them. */
+function glyphBox(el: HTMLElement) {
+  const r = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return { x: r.left, y: r.top, w: r.width, h: r.height };
+  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  if ("letterSpacing" in ctx) ctx.letterSpacing = cs.letterSpacing;
+  const t = ctx.measureText(el.textContent ?? "");
+  // baseline sits where the line's ascent ends; the text box is centred in the line by line-height
+  const lh = parseFloat(cs.lineHeight) || r.height;
+  const baseline =
+    r.top +
+    (lh - (t.fontBoundingBoxAscent + t.fontBoundingBoxDescent)) / 2 +
+    t.fontBoundingBoxAscent;
+  return {
+    x: r.left - t.actualBoundingBoxLeft,
+    y: baseline - t.actualBoundingBoxAscent,
+    w: t.actualBoundingBoxLeft + t.actualBoundingBoxRight,
+    h: t.actualBoundingBoxAscent + t.actualBoundingBoxDescent,
+  };
+}
+
 export default function Shop() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
@@ -75,10 +98,9 @@ export default function Shop() {
             if (phase === "done") return setIntro("off");
             // стекло сжимается в нижнюю панель, логотип уезжает на своё место в шапке
             const d = dockRef.current?.getBoundingClientRect();
-            const m = markRef.current?.getBoundingClientRect();
+            const m = markRef.current ? glyphBox(markRef.current) : null;
             const l = logoRef.current?.getBoundingClientRect();
             if (d && m && l) {
-              const k = m.height / l.height;
               setMorph({
                 frost: {
                   top: d.top,
@@ -88,7 +110,7 @@ export default function Shop() {
                   borderRadius: 36,
                 },
                 logo: {
-                  transform: `translate(${m.left + m.width / 2 - (l.left + l.width / 2)}px, ${m.top + m.height / 2 - (l.top + l.height / 2)}px) scale(${k})`,
+                  transform: `translate(${m.x + m.w / 2 - (l.left + l.width / 2)}px, ${m.y + m.h / 2 - (l.top + l.height / 2)}px) scale(${m.w / l.width}, ${m.h / l.height})`,
                   opacity: 0,
                 },
               });
@@ -311,7 +333,7 @@ export default function Shop() {
             <strong aria-label={formatPrice(product.price)}>
               <Dots
                 text={formatPrice(product.price).replace(" сом", "")}
-                height={19}
+                height={22}
               />
               <small>сом</small>
             </strong>
