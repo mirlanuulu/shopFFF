@@ -31,7 +31,7 @@ type Stage = {
   rail?: THREE.Object3D;
 };
 
-type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void; onSwipe: (dir: "up" | "down") => void };
+type Callbacks = { onIndex: (cat: CategoryId, i: number) => void; onOpen: () => void; onSwipe: (dir: "up" | "down") => void; onIntro: (phase: "clear" | "done") => void };
 
 const TAU = Math.PI * 2;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -41,7 +41,7 @@ const damp = (cur: number, to: number, rate: number, dt: number) => cur + (to - 
 export class Engine {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
+  private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 80);
   private stages = new Map<CategoryId, Stage>();
   private active: CategoryId = "tops";
   private raf = 0;
@@ -63,8 +63,13 @@ export class Engine {
   private detail = false;
   private dm = 0; // 0..1, how far the product card is open
   private blur = -1;
+  private dist = 9;
+  private introT = -1; // seconds into the intro, -1 when it is not playing
+  private introSpeed = 1;
+  private introPhase = 0;
+  private depot: THREE.Group | null = null;
 
-  constructor(private canvas: HTMLCanvasElement, private cb: Callbacks) {
+  constructor(private canvas: HTMLCanvasElement, private cb: Callbacks, intro = false) {
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.matchMedia("(pointer: coarse)").matches ? 1.5 : 2));
@@ -87,6 +92,7 @@ export class Engine {
 
     for (const c of CATEGORIES) this.buildStage(c.id, c.products);
     this.stages.get("tops")!.pres = 0; // animates in on load
+    if (intro && !this.reduced) this.startIntro();
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -143,6 +149,100 @@ export class Engine {
     }
     this.scene.add(root);
     this.stages.set(id, { id, root, items, p: 0, target: 0, pres: 0, side: 0, rail: root.getObjectByName("rail") });
+  }
+
+  /* ---------- intro: a flight down the warehouse aisle to the showroom ---------- */
+
+  private startIntro() {
+    this.introT = 0;
+    this.stages.get("tops")!.side = 1; // the first rail rides in from the right at the end
+    this.scene.fog = new THREE.Fog("#e9e2d6", 3, 16);
+    this.canvas.style.filter = `blur(${INTRO_BLUR}px)`;
+
+    // two storeys of conveyor rails on both sides of the aisle, all of it behind where the camera will stop
+    const depot = new THREE.Group();
+    const loader = new THREE.TextureLoader();
+    const tops = CATEGORIES[0].products;
+    const metal = chrome();
+    const stemGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.3, 6);
+    let n = 0;
+    for (const [x, y, step] of [[-1.25, 2.1, 1.25], [1.25, 2.1, 1.25], [-2.7, 3.9, 1.6], [2.7, 3.9, 1.6]] as const) {
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(RAIL_R, RAIL_R, AISLE + 6, 10), metal);
+      rail.rotation.x = Math.PI / 2;
+      rail.position.set(x, y, AISLE / 2);
+      depot.add(rail);
+      for (let z = 1.2; z < AISLE + 4; z += step) {
+        const p = tops[n++ % tops.length];
+        const h = p.h * 0.95;
+        const hang = new THREE.Group();
+        hang.position.set(x, y, z + (n % 3) * 0.2);
+        hang.rotation.y = -Math.sign(x) * 0.45;
+        hang.userData.seed = n * 1.3;
+        const stem = new THREE.Mesh(stemGeo, metal);
+        stem.position.y = -0.15;
+        hang.add(stem);
+        loader.load(p.image, (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const img = tex.image as { width: number; height: number };
+          const m = new THREE.Mesh(
+            new THREE.PlaneGeometry((h * img.width) / img.height, h),
+            new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 })
+          );
+          m.position.y = -0.28 - h / 2;
+          hang.add(m);
+        });
+        depot.add(hang);
+      }
+    }
+    this.depot = depot;
+    this.scene.add(depot);
+  }
+
+  skipIntro() {
+    if (this.introT >= 0) this.introSpeed = 7;
+  }
+
+  private stepIntro(dt: number, t: number) {
+    this.introT += dt * this.introSpeed;
+    const T = this.introT;
+    const e = smooth(clamp(T / INTRO_FLY, 0, 1));
+    const fly = 1 - e;
+    // wide lens and speed at the start, the showroom's own lens and stillness at the end
+    this.camera.fov = FOV + 40 * fly;
+    this.camera.position.set(Math.sin(T * 1.7) * 0.12 * fly, 0.9 * fly, this.dist + AISLE * fly);
+    this.camera.rotation.set(-0.05 * fly, 0, Math.sin(T * 1.3) * 0.035 * fly);
+    this.camera.updateProjectionMatrix();
+    const fog = this.scene.fog as THREE.Fog;
+    fog.far = 16 + 120 * e * e;
+    if (this.depot) {
+      this.depot.position.z = this.dist + 0.6;
+      // the conveyors keep running: clothes travel toward the viewer and sway on their hooks
+      for (const o of this.depot.children) {
+        if (o.userData.seed === undefined) continue;
+        o.position.z += dt * 1.4;
+        o.rotation.z = Math.sin(t * 3 + o.userData.seed) * 0.06;
+      }
+    }
+    const k = 1 - smooth(clamp((T - INTRO_CLEAR) / 1.0, 0, 1));
+    this.canvas.style.filter = k > 0.01 ? `blur(${(k * INTRO_BLUR).toFixed(1)}px)` : "";
+    if (this.introPhase === 0 && T >= INTRO_CLEAR) {
+      this.introPhase = 1;
+      this.cb.onIntro("clear");
+    }
+    if (T >= INTRO_FLY + 0.25) {
+      this.introT = -1;
+      this.blur = -1;
+      this.scene.fog = null;
+      if (this.depot) {
+        this.scene.remove(this.depot);
+        this.depot.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+        this.depot = null;
+      }
+      this.camera.fov = FOV;
+      this.camera.rotation.set(0, 0, 0);
+      this.resize();
+      this.cb.onIntro("done");
+    }
   }
 
   /* ---------- public api ---------- */
@@ -335,8 +435,8 @@ export class Engine {
     this.viewH = Math.max(4.3, 2.5 / aspect);
     this.viewW = this.viewH * aspect;
     this.awake = 30;
-    const dist = this.viewH / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
-    this.camera.position.set(0, 0, dist);
+    this.dist = this.viewH / (2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)));
+    this.camera.position.set(0, 0, this.dist);
     this.camera.updateProjectionMatrix();
     // lift the stage: the lower part of the screen belongs to the controls
     this.baseY = this.viewH * (aspect < 0.8 ? 0.15 : 0.1);
@@ -344,7 +444,8 @@ export class Engine {
 
   private tick = (now: number) => {
     this.raf = requestAnimationFrame(this.tick);
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    // the first frame can carry a timestamp from before the engine was built, so never step backwards
+    const dt = clamp((now - this.last) / 1000, 0, 0.05);
     this.last = now;
     const t = now / 1000;
     this.energy = this.ptrSmooth.distanceTo(this.pointer);
@@ -354,8 +455,12 @@ export class Engine {
     this.energy += Math.abs(dmTo - this.dm);
     this.dm = Math.abs(dmTo - this.dm) < 0.001 ? dmTo : damp(this.dm, dmTo, 7, dt);
 
+    const intro = this.introT >= 0;
+    if (intro) this.stepIntro(dt, t);
+    const hold = this.introT >= 0 && this.introT < INTRO_RIDE; // the showroom waits for the camera
+
     for (const s of this.stages.values()) {
-      const on = s.id === this.active;
+      const on = s.id === this.active && !hold;
       this.energy += Math.abs((on ? 1 : 0) - s.pres);
       s.pres = damp(s.pres, on ? 1 : 0, 5, dt);
       s.root.visible = s.pres > 0.004;
@@ -378,7 +483,7 @@ export class Engine {
     const act = this.stages.get(this.active)!;
     const ea = smooth(clamp(act.pres, 0, 1));
     const k = this.reduced ? 0 : Math.round(4 * ea * (1 - ea) * 20) / 20;
-    if (k !== this.blur) {
+    if (!intro && this.introT < 0 && k !== this.blur) {
       this.blur = k;
       this.canvas.style.filter = k > 0 ? `blur(${(k * 14).toFixed(1)}px)` : "";
       this.canvas.style.opacity = String(1 - 0.3 * k);
@@ -387,7 +492,7 @@ export class Engine {
     // tops and bottoms are still when nobody touches them, so there is nothing to redraw
     const drifting = !this.reduced && (this.active === "shoes" || this.active === "accessories");
     if (this.awake > 0) this.awake--;
-    if (this.energy > 0.002 || this.drag || drifting || this.awake > 0) this.renderer.render(this.scene, this.camera);
+    if (this.energy > 0.002 || this.drag || drifting || intro || this.awake > 0) this.renderer.render(this.scene, this.camera);
   };
 
   private layout(s: Stage, vel: number, dt: number, t: number, on: boolean) {
@@ -476,4 +581,10 @@ export class Engine {
 const RING_R = 2.5;
 const RAIL_Y = 1.18;
 const RAIL_LEN = 18;
+const FOV = 32;
+const AISLE = 17; // length of the intro flight
+const INTRO_FLY = 3.3; // seconds until the camera stops
+const INTRO_CLEAR = 1.4; // when the frosted glass starts to clear
+const INTRO_RIDE = 2.0; // when the first rail rides in
+const INTRO_BLUR = 16;
 const RING_Y = 1.36;

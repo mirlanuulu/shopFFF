@@ -41,6 +41,17 @@ export default function Shop() {
   const [nudge, setNudge] = useState(false);
   const [touched, setTouched] = useState(false);
   const [webgl, setWebgl] = useState(true);
+  // pending: решаем, показывать ли интро; play: матовое стекло; clear: стекло оттаивает; off: обычная витрина
+  const [intro, setIntro] = useState<"pending" | "play" | "clear" | "off">(
+    "pending",
+  );
+  const [morph, setMorph] = useState<{
+    frost: React.CSSProperties;
+    logo: React.CSSProperties;
+  } | null>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const markRef = useRef<HTMLSpanElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
 
   const category = useMemo(() => CATEGORIES.find((c) => c.id === cat)!, [cat]);
   const index = indexes[cat];
@@ -55,18 +66,55 @@ export default function Shop() {
     import("@/lib/engine")
       .then(({ Engine }) => {
         if (dead || !canvasRef.current) return;
-        engine = new Engine(canvasRef.current, {
+        // интро показываем один раз; ?intro в адресе включает его снова
+        let play = new URLSearchParams(location.search).has("intro");
+        try {
+          play ||= !localStorage.getItem("fff-intro");
+          localStorage.setItem("fff-intro", "1");
+        } catch {}
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+          play = false;
+        setIntro(play ? "play" : "off");
+        const options = {
+          onIntro: (phase: "clear" | "done") => {
+            if (phase === "done") return setIntro("off");
+            // стекло сжимается в нижнюю панель, логотип уезжает на своё место в шапке
+            const d = dockRef.current?.getBoundingClientRect();
+            const m = markRef.current?.getBoundingClientRect();
+            const l = logoRef.current?.getBoundingClientRect();
+            if (d && m && l) {
+              const k = m.height / l.height;
+              setMorph({
+                frost: {
+                  top: d.top,
+                  left: d.left,
+                  width: d.width,
+                  height: d.height,
+                  borderRadius: 36,
+                },
+                logo: {
+                  transform: `translate(${m.left + m.width / 2 - (l.left + l.width / 2)}px, ${m.top + m.height / 2 - (l.top + l.height / 2)}px) scale(${k})`,
+                  opacity: 0,
+                },
+              });
+            }
+            setIntro("clear");
+          },
           onOpen: () => setOpen(true),
-          onSwipe: (dir) => setOpen(dir === "up"),
-          onIndex: (c, i) => {
+          onSwipe: (dir: "up" | "down") => setOpen(dir === "up"),
+          onIndex: (c: CategoryId, i: number) => {
             fx("tick");
             setIndexes((s) => ({ ...s, [c]: i }));
             setTouched(true);
           },
-        });
+        };
+        engine = new Engine(canvasRef.current, options, play);
         engineRef.current = engine;
       })
-      .catch(() => setWebgl(false));
+      .catch(() => {
+        setWebgl(false);
+        setIntro("off");
+      });
     return () => {
       dead = true;
       engine?.dispose();
@@ -149,7 +197,10 @@ export default function Shop() {
   return (
     <main
       className={
-        "shop" + (open ? " detail" : "") + (cartOpen ? " carting" : "")
+        "shop" +
+        (open ? " detail" : "") +
+        (cartOpen ? " carting" : "") +
+        ` intro-${intro}`
       }
     >
       <div className="bg" aria-hidden="true">
@@ -160,7 +211,7 @@ export default function Shop() {
       </div>
       <div
         className="ghost"
-        key={cat}
+        key={cat + (intro === "off" || intro === "clear")}
         style={{ "--n": category.ghost.length } as React.CSSProperties}
         aria-hidden="true"
       >
@@ -179,7 +230,9 @@ export default function Shop() {
       )}
 
       <header className="top">
-        <span className="mark">FFF</span>
+        <span className="mark" ref={markRef}>
+          FFF
+        </span>
         <div className="tools">
           <button
             className="mute"
@@ -221,6 +274,7 @@ export default function Shop() {
       )}
 
       <section
+        ref={dockRef}
         className={
           "dock" + (open ? " open" : "") + (category.guide ? " guided" : "")
         }
@@ -391,6 +445,21 @@ export default function Shop() {
           ))}
         </nav>
       </section>
+
+      {(intro === "play" || intro === "clear") && (
+        <div
+          className="intro"
+          onPointerDown={() => engineRef.current?.skipIntro()}
+        >
+          <div className="frost" style={morph?.frost} />
+          <div className="logo" ref={logoRef} style={morph?.logo}>
+            <Dots text="FFF" height={84} gather />
+          </div>
+          {intro === "play" && (
+            <p className="skip">Коснитесь, чтобы пропустить</p>
+          )}
+        </div>
+      )}
 
       <div className="sr" role="status">
         {added ? `${product.name} в корзине` : ""}
