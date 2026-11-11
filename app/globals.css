@@ -143,6 +143,35 @@ button:focus-visible {
   font-size: 22px;
   letter-spacing: -0.04em;
 }
+.tools {
+  display: flex;
+  gap: 8px;
+}
+.mute {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--edge);
+  display: grid;
+  place-items: center;
+  transition: transform 0.35s var(--spring);
+}
+.mute:active,
+.cartbtn:active {
+  transform: scale(0.9);
+}
+.mute svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .cartbtn {
   background: var(--glass);
   backdrop-filter: blur(18px) saturate(1.4);
@@ -377,6 +406,15 @@ button:focus-visible {
 }
 .dock.open.guided .sizes {
   display: none;
+}
+/* the dock steps back while the cart is up, so two panels never sit on top of each other */
+.dock {
+  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.shop.carting .dock {
+  opacity: 0;
+  transform: translateY(30px) scale(0.96);
+  pointer-events: none;
 }
 .shop.detail .ghost {
   opacity: 0;
